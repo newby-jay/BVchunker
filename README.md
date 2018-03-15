@@ -1,2 +1,2 @@
 # Bio video data chunker
-Python Beam library for reading and splitting bio video data (currently just Nikon nd2 files) into chunks to be processed on individual VMs. Beam transforms are included for reassembling (remapping and combining) unorganized position-times.
+Apache Beam library (in Python) for reading and splitting bio video data (currently just Nikon nd2 files) into chunks of specified size, containing specified overlap. Overlapping regions are useful when, for example, convolutional neural networks are used that require local image patches. Without overlap, artifacts would be introduced at the chunk boundaries. Beam transforms are included for reassembling (remapping and combining) unorganized position-times.
