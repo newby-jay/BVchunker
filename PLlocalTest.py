@@ -21,21 +21,13 @@ from apache_beam.options.pipeline_options import SetupOptions
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output', dest='output', default='/Users/jaynewby/Dropbox/CF/PT/beamTest/output/')
-parser.add_argument('--input', dest='input', default='/Users/jaynewby/Dropbox/CF/PT/beamTest/testVidsND2')
+parser.add_argument('--output', dest='output')
+parser.add_argument('--input', dest='input')
 known_args, pipeline_args = parser.parse_known_args()
 
 pipeline_args.extend([
   '--runner=DirectRunner',
-  # '--runner=DataflowRunner',
-  # '--project=lai-lab',
-  # '--staging_location=gs://pipeline-proc/staging',
-  '--staging_location=/Users/jaynewby/Dropbox/CF/PT/beamTest/',
-  '--temp_location=/Users/jaynewby/Dropbox/CF/PT/beamTest/temp/',
   '--setup_file=./setup.py',
-  # '--extra_package=NetTracker/libhungarian/Hungarian/dist/Hungarian-1.0.tar.gz',
-  # '--zone=us-east1-d',
-  # '--worker_machine_type=n1-standard-4',
   '--max_num_workers=1'
 ])
 pipeline_options = PipelineOptions(pipeline_args)

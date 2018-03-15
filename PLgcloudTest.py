@@ -27,29 +27,21 @@ known_args, pipeline_args = parser.parse_known_args()
 pipeline_args.extend([
   '--runner=DataflowRunner',
   '--project=lai-lab',
-  '--staging_location=gs://pipeline-proc/staging',
-  '--temp_location=gs://pipeline-proc/tmp',
   '--setup_file=./setup.py',
-  # '--extra_package=NetTracker/libhungarian/Hungarian/dist/Hungarian-1.0.tar.gz',
-  # '--zone=us-east1-d',
   '--worker_machine_type=n1-standard-1',
   '--max_num_workers=500',
-  # '--autoscaling_algorithm=NONE',
-  # '--num_workers=100',
   '--disk_size_gb=50',
-  '--experiments=shuffle_mode=service',
+  # '--experiments=shuffle_mode=service',
 ])
 pipeline_options = PipelineOptions(pipeline_args)
 # pipeline_options.view_as(SetupOptions).save_main_session = True
 class UserOptions(PipelineOptions):
     @classmethod
     def _add_argparse_args(cls, parser):
-        parser.add_value_provider_argument('--input', type=str,
-                                           default='gs://pipeline-proc/testVids/**.nd2')
+        parser.add_value_provider_argument('--input', type=str)
         # parser.add_value_provider_argument('--kind', type=str,
         #                                    default='tif')
-        parser.add_value_provider_argument('--output', type=str,
-                                           default='gs://pipeline-proc/testOutput/')
+        parser.add_value_provider_argument('--output', type=str)
 
 
 user_params = pipeline_options.view_as(UserOptions)
