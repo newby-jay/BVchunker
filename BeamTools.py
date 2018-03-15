@@ -8,7 +8,6 @@ import sys
 import time
 
 import pandas as pd
-import tensorflow as tf
 from itertools import product
 
 import apache_beam as beam
@@ -18,10 +17,9 @@ from apache_beam.io.iobase import Read
 
 class VideoSplitter:
     """Break a multidimensional array into chunks of size chunkShape, with overlap size of size Overlap."""
-    def __init__(self, imgMetadata, downSample=1):
-        chunkShape = [16, 256, 256, 16]
-        Overlap = [2, 16, 16, 2]
-        ######################
+    def __init__(self, imgMetadata,
+                 chunkShape=[16, 256, 256, 16],
+                 Overlap=[2, 16, 16, 2], downSample=1):
         chunkShape = array(chunkShape)
         Overlap = array(Overlap)
         self.downSample = int(downSample)

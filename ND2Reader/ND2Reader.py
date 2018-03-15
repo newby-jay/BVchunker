@@ -6,12 +6,9 @@ from numpy.random import rand
 import os
 import sys
 import time
-
 import pandas as pd
-# import tensorflow as tf
-
 from itertools import product
-from NetTracker.BeamTools import VideoSplitter, CombineTZ
+from BeamTools import VideoSplitter, CombineTZ
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
