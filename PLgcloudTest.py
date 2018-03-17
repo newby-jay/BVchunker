@@ -7,8 +7,10 @@ from numpy.random import rand
 import os
 import sys
 import time
-from ND2Reader import ReadFromND2Vid
-from BeamTools import *
+import BVchunker
+from BVchunker.ND2Reader import ReadFromND2Vid
+from BVchunker.TIFReader import ReadFromTIFVid
+from BVchunker.BeamTools import *
 
 import pandas as pd
 import argparse
@@ -29,18 +31,15 @@ pipeline_args.extend([
   '--project=lai-lab',
   '--setup_file=./setup.py',
   '--worker_machine_type=n1-standard-1',
-  '--max_num_workers=500',
-  '--disk_size_gb=50',
+  '--max_num_workers=10',
+  '--disk_size_gb=10',
   # '--experiments=shuffle_mode=service',
 ])
 pipeline_options = PipelineOptions(pipeline_args)
-# pipeline_options.view_as(SetupOptions).save_main_session = True
 class UserOptions(PipelineOptions):
     @classmethod
     def _add_argparse_args(cls, parser):
         parser.add_value_provider_argument('--input', type=str)
-        # parser.add_value_provider_argument('--kind', type=str,
-        #                                    default='tif')
         parser.add_value_provider_argument('--output', type=str)
 
 
@@ -48,10 +47,12 @@ user_params = pipeline_options.view_as(UserOptions)
 
 with beam.Pipeline(options=pipeline_options) as p:
     timeString = time.ctime()
-    nd2Files = (p | 'Read nd2' >> ReadFromND2Vid(user_params.input))
-    NNproc = (nd2Files | 'recombine video' >> beam.CombinePerKey(combineStats())
-                       | 'to JSON' >> beam.ParDo(toJSON())
-                       | 'WriteFullOutput' >> WriteToText(user_params.output,
-                                                          shard_name_template='',
-                                                          file_name_suffix=timeString + '.txt')
+    # files = (p | 'Read nd2' >> ReadFromND2Vid(user_params.input)))
+    files = (p | 'Read tif' >> ReadFromTIFVid(user_params.input))
+    tester = (files | beam.ParDo(stripChunks())
+                    | 'recombine video' >> beam.CombinePerKey(combineStats())
+                    | 'to JSON' >> beam.ParDo(toJSON())
+                    | 'WriteFullOutput' >> WriteToText(user_params.output,
+                                                      shard_name_template='',
+                                                      file_name_suffix=timeString + '.txt')
              )

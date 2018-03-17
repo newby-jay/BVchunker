@@ -63,7 +63,6 @@ class build(_build):  # pylint: disable=invalid-name
 # The output of custom commands (including failures) will be logged in the
 # worker-startup log.
 CUSTOM_COMMANDS = []
-                   ]
 
 class CustomCommands(setuptools.Command):
   """A setuptools Command class able to run arbitrary commands."""
@@ -100,9 +99,9 @@ REQUIRED_PACKAGES = ['numpy', 'scipy', 'pandas']
 
 
 setuptools.setup(
-    name='ND2Reader',
+    name='BVchunker',
     version='0.0.1',
-    description='Nikon nd2 video reader for Apache Beam',
+    description='Process large micoscopy videos using Apache Beam',
     install_requires=REQUIRED_PACKAGES,
     packages=setuptools.find_packages(),
     cmdclass={

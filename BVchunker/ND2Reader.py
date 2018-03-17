@@ -8,7 +8,8 @@ import sys
 import time
 import pandas as pd
 from itertools import product
-from BeamTools import VideoSplitter, CombineTZ
+import BVchunker
+from BVchunker.BeamTools import VideoSplitter, combineTZ
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -19,11 +20,10 @@ from apache_beam.io.iobase import Read
 class ReadFromND2Vid(PTransform):
     """A ``PTransform`` for reading Nikon nd2 video files."""
 
-    def __init__(self, file_pattern=None):
-        """Initializes ``ReadFromND2Vid``.
-        """
+    def __init__(self, file_pattern=None, chunkShape=None, Overlap=None, downSample=1):
+        """Initializes ``ReadFromND2Vid``."""
         super(ReadFromND2Vid, self).__init__()
-        self._source = _ND2Source(file_pattern, min_bundle_size=0, validate=False)
+        self._source = _ND2Source(file_pattern, chunkShape, Overlap, downSample)
 
     def expand(self, pvalue):
         return pvalue.pipeline | Read(self._source) | beam.CombinePerKey(combineTZ())
@@ -49,6 +49,9 @@ class _ND2utils:
         except:
             vfile.seek(0, 2)
             size = vfile.tell()
+        vfile.seek(0)
+        mn = vfile.read(3)
+        assert mn == '\xda\xce\xbe'
         filemapOffset = 0
         start = max(0, size - 100*1024)
         vfile.seek(start)
@@ -128,6 +131,11 @@ class _ND2utils:
 class _ND2Source(filebasedsource.FileBasedSource):
     """An experiment.
     """
+    def __init__(self, file_pattern, chunkShape=None, Overlap=None, downSample=1):
+        super(_ND2Source, self).__init__(file_pattern, min_bundle_size=0, validate=False)
+        self.chunkShape = chunkShape
+        self.Overlap = Overlap
+        self.downSample = downSample
     def read_records(self, fileName, range_tracker):
         nextBlockStart = -1
         def split_points_unclaimed(stopPosition):
@@ -161,7 +169,7 @@ class _ND2Source(filebasedsource.FileBasedSource):
             Nt, Ny, Nx, Nz = shape
             frameSizeBytes = 2*Nx*Ny
             assert all(diff(offsets) > frameSizeBytes)
-            assert offsets[-1] < fileSize - frameSizeBytes
+            assert offsets[-1] <= fileSize - frameSizeBytes
             recordSize = zeros_like(offsets)
             recordSize[:-1] = diff(offsets)
             recordSize[-1] = diff(offsets).max()
@@ -170,8 +178,21 @@ class _ND2Source(filebasedsource.FileBasedSource):
             #     # yield ('Error loading file', fileName)
             #     # files that cannot be read should get filtered out
             #     assert False
-            splitter = VideoSplitter(imgMetadata)
-
+            if all(self.chunkShape == None) and all(self.Overlap == None):
+                splitter = VideoSplitter(imgMetadata, downSample=self.downSample)
+            elif all(self.chunkShape != None) and all(self.Overlap == None):
+                splitter = VideoSplitter(imgMetadata,
+                                        chunkShape=self.chunkShape,
+                                        downSample=self.downSample)
+            elif all(self.chunkShape == None) and all(self.Overlap != None):
+                splitter = VideoSplitter(imgMetadata,
+                                        Overlap=self.Overlap,
+                                        downSample=self.downSample)
+            else:
+                splitter = VideoSplitter(imgMetadata,
+                                        Overlap=self.Overlap,
+                                        chunkShape=self.chunkShape,
+                                        downSample=self.downSample)
             if startOffset is None:
                 startOffset = offsets[0]
             if not startOffset in offsets:

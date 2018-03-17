@@ -1,0 +1,10 @@
+README.md
+setup.py
+BVchunker/BeamTools.py
+BVchunker/ND2Reader.py
+BVchunker/__init__.py
+BVchunker.egg-info/PKG-INFO
+BVchunker.egg-info/SOURCES.txt
+BVchunker.egg-info/dependency_links.txt
+BVchunker.egg-info/requires.txt
+BVchunker.egg-info/top_level.txt

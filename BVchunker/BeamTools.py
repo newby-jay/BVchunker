@@ -253,6 +253,12 @@ class combinePointset(beam.CombineFn):
         mdout = dict((k, md[k]) for k in md if k != 'slice')
         return {'pointSet': pd.DataFrame(PS, columns=self.columns),
                 'metadata': mdout}
+class stripChunks(beam.DoFn):
+    def __init__(self):
+        pass
+    def process(self, KVelement):
+        key, element = KVelement
+        yield (element['metadata']['fileName'], element)
 class combineStats(beam.CombineFn):
     """Reduce video chunks and extract mean and standard deviation. Intended for testing purposes."""
     def __init__(self):
@@ -261,11 +267,12 @@ class combineStats(beam.CombineFn):
         return 0.0, 0.0, 0, 0
     def add_input(self, A, element):
         Am, As, Ac, Af = A
-        frame = float64(element['frame'])
+        frame = float64(element['videoData'])
+        shape = frame.shape
         Am += frame.sum()
         As += (frame**2).sum()
         Ac += frame.size
-        Af += 1
+        Af += shape[0]*shape[3]
         return Am, As, Ac, Af
     def merge_accumulators(self, accumulators):
         m, s, c, f = self.create_accumulator()
