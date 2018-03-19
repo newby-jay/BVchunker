@@ -2,7 +2,9 @@ README.md
 setup.py
 BVchunker/BeamTools.py
 BVchunker/ND2Reader.py
+BVchunker/TIFReader.py
 BVchunker/__init__.py
+BVchunker/tifffile.py
 BVchunker.egg-info/PKG-INFO
 BVchunker.egg-info/SOURCES.txt
 BVchunker.egg-info/dependency_links.txt

@@ -34,11 +34,31 @@ pipeline_args.extend([
 ])
 pipeline_options = PipelineOptions(pipeline_args)
 
+
+
+class identity(beam.DoFn):
+    def __init__(self):
+        pass
+    def process(self, element):
+        assert type(element) == tuple
+        k, e = element
+        yield element
+
 with beam.Pipeline(options=pipeline_options) as p:
     # files = (p | 'Read nd2' >> ReadFromND2Vid(os.path.join(known_args.input, '**.nd2')))
-    files = (p | 'Read tif' >> ReadFromTIFVid(os.path.join(known_args.input, '**.tif')))
-    tester = (files | beam.ParDo(stripChunks())
-                    | 'recombine video' >> beam.CombinePerKey(combineStats())
-                    | 'to JSON' >> beam.ParDo(toJSON())
-                    | 'WriteFullOutput' >> WriteToText(known_args.output, file_name_suffix='.txt')
-             )
+    files = p | 'Read tif' >> ReadFromTIFVid(os.path.join(known_args.input, '**.tif'))
+    goodFiles, badFiles = files
+    (
+    goodFiles |
+        beam.ParDo(stripChunks()) |
+        'recombine video' >> beam.CombinePerKey(combineStats()) |
+        'to JSON' >> beam.ParDo(toJSON()) |
+        'WriteFullOutput' >> WriteToText(known_args.output,
+                                         file_name_suffix='.txt')
+    )
+    (
+    badFiles |
+        'failed files to JSON' >> beam.ParDo(toJSON()) |
+        'failed files output' >> WriteToText(known_args.output,
+                                             file_name_suffix='-failedFiles.txt')
+    )

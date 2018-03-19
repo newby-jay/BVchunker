@@ -9,9 +9,11 @@ import time
 import pandas as pd
 from itertools import product
 import BVchunker
-from BVchunker.BeamTools import VideoSplitter, combineTZ
-import tifffile as tif
+from BVchunker.BeamTools import VideoSplitter, combineTZ, splitBadFiles
+import BVchunker.tifffile as tif
+
 import xml.etree.ElementTree as ET
+from cStringIO import StringIO
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -28,7 +30,9 @@ class ReadFromTIFVid(PTransform):
         self._source = _TIFSource(file_pattern, chunkShape, Overlap, downSample)
 
     def expand(self, pvalue):
-        return pvalue.pipeline | Read(self._source) | beam.CombinePerKey(combineTZ())
+        frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
+        goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
+        return goodFiles, frames[0]
 
     def display_data(self):
         return {'source_dd': self._source}
@@ -64,7 +68,7 @@ class _TIFutils:
         entries = []
         for n in arange(B):
             start = A + 2 + 12*n
-            assert start + 12 < len(buf)
+            assert 0 < start + 12 < len(buf)
             entries.append(buf[start:start+12])
         Q = A + 2 + B*12
         assert 0 < Q + 4 <= len(buf)
@@ -121,21 +125,20 @@ class _TIFutils:
         return array(frameOffsets), MDfirst
     def getNextOffset(self, A0, vfile):
         vfile.seek(A0)
-        IFDoffsets.append(A0)
         buf = vfile.read(self.bufferSize)
         A, entries = self.getIFD(buf, 0)
         frameMD = self.parseEntries(entries)
         numStrips, stripOffset = frameMD['stripOffsets']
         if numStrips == 1: # in this case, we live in a sane universe
             frameOffset = stripOffset
-        else: # in this case, we have an offset to the actual offset--it can be anywhere in the file :D
+        else: # in this case, we have an offset to the actual offset
             ind = stripOffset - A
-            if not 0 < ind + 4 < len(buf):
+            if not 0 < ind + 4 <= len(buf):
                 vfile.seek(stripOffset)
                 buf = vfile.read(4)
                 ind = 0
             frameOffset = self.get32int(buf[ind: ind + 4])
-        return frameOffset, frameMD
+        return A, frameOffset, frameMD
     def readMetadata(self, vfile):
         vfile.seek(0)
         buf = vfile.read(8)
@@ -147,13 +150,14 @@ class _TIFutils:
             self.sz = 4
         else:
             raise
-        A = self.get32int(buf[4:8])
-        vfile.seek(A)
+        A0 = self.get32int(buf[4:8])
+        vfile.seek(A0)
         buf = vfile.read(10*1024)
         B = self.get16int(buf[:2])
         if 2 + B*12 + 4 > self.bufferSize:
             self.bufferSize = 2*(2 + B*12 + 4)
-        A, md = self.getNextOffset(A, vfile)
+        A, imgOffset, md = self.getNextOffset(A0, vfile)
+        blockSize = absolute(A-A0)
         Ny = md['Ny']
         Nx = md['Nx']
         imgMD = {'Ny': Ny, 'Nx': Nx}
@@ -170,6 +174,9 @@ class _TIFutils:
                 pixelMD = p.attrib
             imgMD['Nt'] = int(pixelMD['SizeT'])
             imgMD['Nz'] = int(pixelMD['SizeZ'])
+            if imgMD['Nt'] == 1 and imgMD['Nz'] > imgMD['Nt']:
+                imgMD['Nt'] = imgMD['Nz']
+                imgMD['Nz'] = 1
             imgMD['dxy'] = float(pixelMD['PhysicalSizeY'])
             assert pixelMD['PhysicalSizeX'] == pixelMD['PhysicalSizeY']
             imgMD['dz'] = float(pixelMD['PhysicalSizeZ'])
@@ -178,7 +185,8 @@ class _TIFutils:
             assert pixelMD['PhysicalSizeXUnit'] == pixelMD['PhysicalSizeYUnit']
             imgMD['dt'] = float(pixelMD['TimeIncrement'])
         elif '<MetaData' in metaDataRaw and '</MetaData>' in metaDataRaw:
-            imgMD['Nt'] = int(self.fileSize/(imgMD['pixelSizeBytes']*Nx*Ny))
+            imgMD['Nt'] = int(ceil(self.fileSize/blockSize))
+            #print(imgMD['Nt'], self.fileSize, imgMD['pixelSizeBytes']*Nx*Ny)
             imgMD['Nz'] = 1
             imgMD['dz'] = 1.0
             imgMD['dxy'] = 1.0
@@ -195,42 +203,41 @@ class _TIFutils:
             # imgMD['Nt'] = Nimages
             imgMD['dz'] = 1.0
             imgMD['dxy'] = 1.0
-        return A, imgMD
+        return A, imgOffset, imgMD
 class _TIFSource(filebasedsource.FileBasedSource):
     """Read tif video into chunks."""
-    DEFAULT_READ_BUFFER_SIZE = 8192
+    # DEFAULT_READ_BUFFER_SIZE = 8192
+    # class ReadBuffer(object):
+    # # A buffer that gives the buffered data and next position in the
+    # # buffer that should be read.
+    #     def __init__(self, data, position):
+    #         self._data = data
+    #         self._position = position
+    #
+    #     @property
+    #     def data(self):
+    #         return self._data
+    #
+    #     @data.setter
+    #     def data(self, value):
+    #         assert isinstance(value, bytes)
+    #         self._data = value
+    #
+    #     @property
+    #     def position(self):
+    #         return self._position
+    #
+    #     @position.setter
+    #     def position(self, value):
+    #         assert isinstance(value, (int, long))
+    #         if value > len(self._data):
+    #             raise ValueError('Cannot set position to %d since it\'s larger than '
+    #                              'size of data %d.', value, len(self._data))
+    #         self._position = value
+    #     def reset(self):
+    #         self.data = ''
+    #         self.position = 0
 
-    class ReadBuffer(object):
-    # A buffer that gives the buffered data and next position in the
-    # buffer that should be read.
-        def __init__(self, data, position):
-            self._data = data
-            self._position = position
-
-        @property
-        def data(self):
-            return self._data
-
-        @data.setter
-        def data(self, value):
-            assert isinstance(value, bytes)
-            self._data = value
-
-        @property
-        def position(self):
-            return self._position
-
-        @position.setter
-        def position(self, value):
-            assert isinstance(value, (int, long))
-            if value > len(self._data):
-                raise ValueError('Cannot set position to %d since it\'s larger than '
-                                 'size of data %d.', value, len(self._data))
-            self._position = value
-        def reset(self):
-            self.data = ''
-            self.position = 0
-            
     def __init__(self, file_pattern, chunkShape=None, Overlap=None, downSample=1):
         super(_TIFSource, self).__init__(file_pattern, splittable=False, min_bundle_size=0, validate=False)
         self.chunkShape = chunkShape
@@ -242,7 +249,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
         except:
             vfile.seek(0, 2)
             self.fileSize = vfile.tell()
-    def _getSplitter(self):
+    def _getSplitter(self, imgMetadata):
         if all(self.chunkShape == None) and all(self.Overlap == None):
             splitter = VideoSplitter(imgMetadata, downSample=self.downSample)
         elif all(self.chunkShape != None) and all(self.Overlap == None):
@@ -273,43 +280,85 @@ class _TIFSource(filebasedsource.FileBasedSource):
         basePath, vidName = os.path.split(fileName)
         _, ext = os.path.splitext(vidName)
         startOffset = range_tracker.start_position()
-        splitter = self._getSplitter()
-
-
         with self.open_file(fileName) as vfile:
-            self._getSize(vfile)
-            TU = _TIFutils()
-            A, imgMetadata = TU.readMetadata(vfile)
-            imgMetadata['fileSize'] = self.fileSize
-            imgMetadata['fileName'] = fileName
-            bytesPerPixel = imgMetadata['pixelSizeBytes']
-            assert bytesPerPixel == 1 or bytesPerPixel == 2
-            shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
-            assert all(shape > 0)
-            Nt, Ny, Nx, Nz = shape
-            frameSizeBytes = bytesPerPixel*Ny*Nx
-            if startOffset is None:
-                startOffset = A
-            vfile.seek(startOffset)
-            while range_tracker.try_claim(vfile.tell()):
-                if vfile.tell() == self.fileSize:
-                    break
-                A, imgMD = self.getNextOffset(A, vfile)
-                record = vfile.read(frameSizeBytes)
-                if bytesPerPixel == 1:
-                    dt = dtype('uint8').newbyteorder(TU.E)
-                elif bytesPerPixel == 2:
-                    dt = dtype('uint16').newbyteorder(TU.E)
-                frame = frombuffer(record, dt).reshape(Ny, Nx)
-                assert all(isfinite(frame))
-                if A > 0:
-                    nextBlockStart = A
-                    startOffset = A
-                    vfile.seek(A)
+            try:
+                self._getSize(vfile)
+                if self.fileSize < 1024**3:
+                    vfile.seek(0)
+                    mfile = StringIO()
+                    mfile.write(vfile.read(self.fileSize))
+                    mfile.seek(0)
+                    with tif.TiffFile(mfile) as tfile:
+                        vid = tfile.asarray().squeeze()
+                        dim = len(vid.shape)
+                        assert 3 <= dim <= 4
+                        if dim == 3:
+                            Nt, Ny, Nx = vid.shape
+                            Nz = 1
+                            imgMetadata = {'Nt': Nt, 'Ny': Ny, 'Nx': Nx, 'Nz': 1,
+                                     'dxy': 1.0, 'dz': 1.0,
+                                     'fileName': fileName, 'fileSize': self.fileSize}
+                        else:
+                            assert tfile.is_ome
+                            Nt, Nz, Ny, Nx = vid.shape
+                            imgMetadata = {'Nt': Nt, 'Ny': Ny, 'Nx': Nx, 'Nz': Nz,
+                                     'fileName': fileName, 'fileSize': self.fileSize}
+                            vid = vid.transpose(1, 0, 2, 3).reshape(-1, Ny, Nx)
+                        if tfile.is_ome:
+                            metadataRaw = tfile.ome_metadata
+                            imgMetadata['metadataRaw'] = metadataRaw
+                            pixelMD = metadataRaw['OME']['Image']['Pixels']
+                            # imgMetadata['Nt'] = int(pixelMD['SizeT'])
+                            # imgMetadata['Nz'] = int(pixelMD['SizeZ'])
+                            if Nz == 1:
+                                assert Nt == int(pixelMD['SizeT']) or Nt == int(pixelMD['SizeZ'])
+                            else:
+                                assert  Nt == int(pixelMD['SizeT']) or Nz == int(pixelMD['SizeZ'])
+                            imgMetadata['dxy'] = float(pixelMD['PhysicalSizeY'])
+                            assert pixelMD['PhysicalSizeX'] == pixelMD['PhysicalSizeY']
+                            imgMetadata['dz'] = float(pixelMD['PhysicalSizeZ'])
+                            assert int(pixelMD['SizeC']) == 1
+                            imgMetadata['dxy units'] = pixelMD['PhysicalSizeYUnit']
+                            assert pixelMD['PhysicalSizeXUnit'] == pixelMD['PhysicalSizeYUnit']
+                            imgMetadata['dt'] = float(pixelMD['TimeIncrement'])
+                    mfile.truncate(0)
+                    splitter = self._getSplitter(imgMetadata)
+                    for n, frame in enumerate(vid):
+                        for chunk in splitter.iterChunks(n + 1, frame):
+                            yield chunk
                 else:
-                    vfile.seek(self.fileSize)
-                for chunk in splitter.iterChunks(n, frame):
-                    yield chunk
+                    TU = _TIFutils()
+                    TU.fileSize = self.fileSize
+                    A, imgOffset, imgMetadata = TU.readMetadata(vfile)
+                    if bytesPerPixel == 1:
+                        dt = dtype('uint8').newbyteorder(TU.E)
+                    elif bytesPerPixel == 2:
+                        dt = dtype('uint16').newbyteorder(TU.E)
+                    imgMetadata['fileSize'] = self.fileSize
+                    imgMetadata['fileName'] = fileName
+                    bytesPerPixel = imgMetadata['pixelSizeBytes']
+                    assert bytesPerPixel == 1 or bytesPerPixel == 2
+                    shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
+                    assert all(shape > 0)
+                    Nt, Ny, Nx, Nz = shape
+                    frameSizeBytes = bytesPerPixel*Ny*Nx
+                    splitter = self._getSplitter(imgMetadata)
+                    if startOffset is None:
+                        startOffset = imgOffset
+                    vfile.seek(imgOffset)
+                    for n in arange(imgMetadata['Nt']*imgMetadata['Nz']):
+                        record = vfile.read(frameSizeBytes)
+                        frame = frombuffer(record, dt).reshape(Ny, Nx)
+                        assert all(isfinite(frame))
+                        if n < imgMetadata['Nt']*imgMetadata['Nz'] - 1:
+                            A, frameOffset, imgMD = TU.getNextOffset(A, vfile)
+                            nextBlockStart = frameOffset
+                            startOffset = frameOffset
+                            vfile.seek(frameOffset)
+                        for chunk in splitter.iterChunks(n + 1, frame):
+                            yield chunk
+            except:
+                yield ('File Not Processed', fileName)
 
         # with self.open_file(fileName) as vfile:
         #     self._getSize(vfile)

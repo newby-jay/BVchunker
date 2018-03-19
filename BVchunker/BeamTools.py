@@ -294,3 +294,6 @@ class toJSON(beam.DoFn):
         pass
     def process(self, element):
         yield pd.json.dumps({element[0]: element[1]})
+def splitBadFiles(KVelement, N):
+    key, element = KVelement
+    return int(key != 'File Not Processed')

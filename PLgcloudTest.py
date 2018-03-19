@@ -32,7 +32,7 @@ pipeline_args.extend([
   '--setup_file=./setup.py',
   '--worker_machine_type=n1-standard-1',
   '--max_num_workers=10',
-  '--disk_size_gb=10',
+  '--disk_size_gb=50',
   # '--experiments=shuffle_mode=service',
 ])
 pipeline_options = PipelineOptions(pipeline_args)
@@ -47,12 +47,22 @@ user_params = pipeline_options.view_as(UserOptions)
 
 with beam.Pipeline(options=pipeline_options) as p:
     timeString = time.ctime()
-    # files = (p | 'Read nd2' >> ReadFromND2Vid(user_params.input)))
+    # files = (p | 'Read nd2' >> ReadFromND2Vid(user_params.input))
     files = (p | 'Read tif' >> ReadFromTIFVid(user_params.input))
-    tester = (files | beam.ParDo(stripChunks())
-                    | 'recombine video' >> beam.CombinePerKey(combineStats())
-                    | 'to JSON' >> beam.ParDo(toJSON())
-                    | 'WriteFullOutput' >> WriteToText(user_params.output,
-                                                      shard_name_template='',
-                                                      file_name_suffix=timeString + '.txt')
-             )
+    goodFiles, badFiles = files
+    (
+    goodFiles |
+        beam.ParDo(stripChunks()) |
+        'recombine video' >> beam.CombinePerKey(combineStats()) |
+        'to JSON' >> beam.ParDo(toJSON()) |
+        'WriteFullOutput' >> WriteToText(user_params.output,
+                                         shard_name_template='',
+                                         file_name_suffix=timeString+'.txt')
+    )
+    (
+    badFiles |
+        'failed to JSON' >> beam.ParDo(toJSON()) |
+        'failed output' >> WriteToText(user_params.output,
+                                       shard_name_template='',
+                                       file_name_suffix=timeString+'-failedFiles.txt')
+    )

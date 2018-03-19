@@ -9,7 +9,7 @@ import time
 import pandas as pd
 from itertools import product
 import BVchunker
-from BVchunker.BeamTools import VideoSplitter, combineTZ
+from BVchunker.BeamTools import VideoSplitter, combineTZ, splitBadFiles
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -26,7 +26,9 @@ class ReadFromND2Vid(PTransform):
         self._source = _ND2Source(file_pattern, chunkShape, Overlap, downSample)
 
     def expand(self, pvalue):
-        return pvalue.pipeline | Read(self._source) | beam.CombinePerKey(combineTZ())
+        frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
+        goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
+        return goodFiles, frames[0]
 
     def display_data(self):
         return {'source_dd': self._source}
@@ -136,6 +138,23 @@ class _ND2Source(filebasedsource.FileBasedSource):
         self.chunkShape = chunkShape
         self.Overlap = Overlap
         self.downSample = downSample
+    def _getSplitter(self, imgMetadata):
+        if all(self.chunkShape == None) and all(self.Overlap == None):
+            splitter = VideoSplitter(imgMetadata, downSample=self.downSample)
+        elif all(self.chunkShape != None) and all(self.Overlap == None):
+            splitter = VideoSplitter(imgMetadata,
+                                    chunkShape=self.chunkShape,
+                                    downSample=self.downSample)
+        elif all(self.chunkShape == None) and all(self.Overlap != None):
+            splitter = VideoSplitter(imgMetadata,
+                                    Overlap=self.Overlap,
+                                    downSample=self.downSample)
+        else:
+            splitter = VideoSplitter(imgMetadata,
+                                    Overlap=self.Overlap,
+                                    chunkShape=self.chunkShape,
+                                    downSample=self.downSample)
+        return splitter
     def read_records(self, fileName, range_tracker):
         nextBlockStart = -1
         def split_points_unclaimed(stopPosition):
@@ -150,77 +169,60 @@ class _ND2Source(filebasedsource.FileBasedSource):
         basePath, vidName = os.path.split(fileName)
         _, ext = os.path.splitext(vidName)
         startOffset = range_tracker.start_position()
-
         with self.open_file(fileName) as vfile:
-            # try:
-            offsetData, imgMetadata = _ND2utils.readMetadata(vfile)
-            fileSize = imgMetadata['fileSize']
-            imgMetadata['fileName'] = fileName
-            bytesPerPixel = imgMetadata['NxBytes']/imgMetadata['Nx']
-            assert bytesPerPixel == 2 # must be 16bit and single channel
-            offsets = array([osd[1] for osd in offsetData], 'int')
-            inds = offsets.argsort()
-            offsets = offsets[inds]
-            assert offsets[0] > 0
-            blockSizes = array([offsetData[ind][2] for ind in inds], 'int')
-            labelShifts = array([len(offsetData[ind][0]) for ind in inds], 'int')
-            shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
-            assert all(shape > 0)
-            Nt, Ny, Nx, Nz = shape
-            frameSizeBytes = 2*Nx*Ny
-            assert all(diff(offsets) > frameSizeBytes)
-            assert offsets[-1] <= fileSize - frameSizeBytes
-            recordSize = zeros_like(offsets)
-            recordSize[:-1] = diff(offsets)
-            recordSize[-1] = diff(offsets).max()
-            # assert all(diff(offsets) == diff(offsets)[0]) # all records must have the same size
-            # except:
-            #     # yield ('Error loading file', fileName)
-            #     # files that cannot be read should get filtered out
-            #     assert False
-            if all(self.chunkShape == None) and all(self.Overlap == None):
-                splitter = VideoSplitter(imgMetadata, downSample=self.downSample)
-            elif all(self.chunkShape != None) and all(self.Overlap == None):
-                splitter = VideoSplitter(imgMetadata,
-                                        chunkShape=self.chunkShape,
-                                        downSample=self.downSample)
-            elif all(self.chunkShape == None) and all(self.Overlap != None):
-                splitter = VideoSplitter(imgMetadata,
-                                        Overlap=self.Overlap,
-                                        downSample=self.downSample)
-            else:
-                splitter = VideoSplitter(imgMetadata,
-                                        Overlap=self.Overlap,
-                                        chunkShape=self.chunkShape,
-                                        downSample=self.downSample)
-            if startOffset is None:
-                startOffset = offsets[0]
-            if not startOffset in offsets:
-                n = searchsorted(offsets, startOffset)
-                if n < offsets.size:
-                    startOffset = offsets[n]
-            vfile.seek(startOffset)
-            while range_tracker.try_claim(vfile.tell()):
-                n = searchsorted(offsets, vfile.tell()) + 1
-                if n > offsets.size:
-                    break
-                record = vfile.read(recordSize[n-1])
-                key = 'ImageDataSeq|{0}!'.format(int(n-1))
-                i = record.index(key)
-                # '\xda\xce\xbe\n\xe8\x0f\x00\x00'
-                assert record[:4] == '\xda\xce\xbe\n'
-                frameShift = frombuffer(record[4:12], 'int32')
-                db0 = record[i + frameShift[0]:]
-                # assert len(db0) == frameShift[1]
-                timeStampMaybe = db0[:8]
-                db = db0[8: frameSizeBytes + 8]
-                frame = frombuffer(db, 'uint16').reshape(Ny, Nx)
-                assert all(isfinite(frame))
-                if n < offsets.size:
-                    nextBlockStart = offsets[n]
-                    startOffset = offsets[n]
-                    vfile.seek(startOffset)
-                else:
-                    vfile.seek(fileSize)
-                for chunk in splitter.iterChunks(n, frame):
-                    yield chunk
+            try:
+                offsetData, imgMetadata = _ND2utils.readMetadata(vfile)
+                fileSize = imgMetadata['fileSize']
+                imgMetadata['fileName'] = fileName
+                bytesPerPixel = imgMetadata['NxBytes']/imgMetadata['Nx']
+                assert bytesPerPixel == 2 # must be 16bit and single channel
+                offsets = array([osd[1] for osd in offsetData], 'int')
+                inds = offsets.argsort()
+                offsets = offsets[inds]
+                assert offsets[0] > 0
+                blockSizes = array([offsetData[ind][2] for ind in inds], 'int')
+                labelShifts = array([len(offsetData[ind][0]) for ind in inds], 'int')
+                shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
+                assert all(shape > 0)
+                Nt, Ny, Nx, Nz = shape
+                frameSizeBytes = 2*Nx*Ny
+                assert all(diff(offsets) > frameSizeBytes)
+                assert offsets[-1] <= fileSize - frameSizeBytes
+                recordSize = zeros_like(offsets)
+                recordSize[:-1] = diff(offsets)
+                recordSize[-1] = diff(offsets).max()
+
+                splitter = self._getSplitter(imgMetadata)
+                if startOffset is None:
+                    startOffset = offsets[0]
+                if not startOffset in offsets:
+                    n = searchsorted(offsets, startOffset)
+                    if n < offsets.size:
+                        startOffset = offsets[n]
+                vfile.seek(startOffset)
+                while range_tracker.try_claim(vfile.tell()):
+                    n = searchsorted(offsets, vfile.tell()) + 1
+                    if n > offsets.size:
+                        break
+                    record = vfile.read(recordSize[n-1])
+                    key = 'ImageDataSeq|{0}!'.format(int(n-1))
+                    i = record.index(key)
+                    # '\xda\xce\xbe\n\xe8\x0f\x00\x00'
+                    assert record[:4] == '\xda\xce\xbe\n'
+                    frameShift = frombuffer(record[4:12], 'int32')
+                    db0 = record[i + frameShift[0]:]
+                    # assert len(db0) == frameShift[1]
+                    timeStampMaybe = db0[:8]
+                    db = db0[8: frameSizeBytes + 8]
+                    frame = frombuffer(db, 'uint16').reshape(Ny, Nx)
+                    assert all(isfinite(frame))
+                    if n < offsets.size:
+                        nextBlockStart = offsets[n]
+                        startOffset = offsets[n]
+                        vfile.seek(startOffset)
+                    else:
+                        vfile.seek(fileSize)
+                    for chunk in splitter.iterChunks(n, frame):
+                        yield chunk
+            except:
+                yield ('File Not Processed', fileName)
