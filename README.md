@@ -12,10 +12,13 @@ I have a basic TIF reader working, but it is extremely slow at best with the Dat
 
 Out of those I've tested, only OME TIF files have sufficient metadata to do 3D tracking. I can get the number of z slices for imageJ, but I can't get the physical pixel spacing and z-axis slice spacing. I need the ratio to link localizations into tracks. The reader can process 8-bit and 16-bit files. There is no support for compression.
 
-### Ideas:
-  - IFD tags don't have explicit markers, but they should all partially match the first IFD. Specifically, the image dimension and pixel type should be the same. Technically, they don't have to be the same, in general, but must be the same for video files. This should serve as a marker to search for, which will enable a multi-threaded reader without pre scanning for all of the offsets. (use TAGS 256, 257, 258, 259 and partial on 273 as a search pattern)
-  - The imageJ format is different and must be handled separately like the ND2 reader
+## Ideas:
+  - IFD tags don't have explicit markers, but they should all partially match the first IFD. Specifically, the image dimension and pixel type should be the same. Technically, they don't have to be the same, in general, but must be the same for video files. This should serve as a marker to search for, which will enable a multi-threaded reader without pre scanning for all of the offsets.
+    - The imageJ format is different and must be handled separately like the ND2 reader
+    - Use TAGS 256, 257, 258, 259 and partial on 273 as a search pattern
+    - March 19: The idea has a major problem. If multiple threads are pulling down the file, they wont know the position of the frame in the sequence. If this issue can be resolved. It should be possible to build on TIFReader-experimental.py.
   - A data buffer will probably help speed up the reader, but this poses a problem for Metamorph files that have their IFD at the end of the block and point backward.
+    - I think I can fix this issue using TIFReader-experimental by setting a flag so that it is set to either the beginning or end of the block.
   - Expand to recognize and handle BIGTIF files (magic number 43 and 64 bit offset blocks)
 
 ## Future file reader types

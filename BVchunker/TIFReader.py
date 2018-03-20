@@ -347,5 +347,5 @@ class _TIFSource(filebasedsource.FileBasedSource):
                             vfile.seek(frameOffset)
                         for chunk in splitter.iterChunks(n + 1, frame):
                             yield chunk
-            except Exception as inst:
-                yield ('File Not Processed', [fileName, type(inst), inst.args, inst])
+            except:
+                yield ('File Not Processed', fileName)

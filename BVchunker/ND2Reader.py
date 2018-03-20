@@ -199,7 +199,6 @@ class _ND2Source(filebasedsource.FileBasedSource):
                 recordSize = zeros_like(offsets)
                 recordSize[:-1] = diff(offsets)
                 recordSize[-1] = diff(offsets).max()
-
                 splitter = self._getSplitter(imgMetadata)
                 if startOffset is None:
                     startOffset = offsets[0]
