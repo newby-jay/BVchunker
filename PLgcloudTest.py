@@ -41,28 +41,44 @@ class UserOptions(PipelineOptions):
     def _add_argparse_args(cls, parser):
         parser.add_value_provider_argument('--input', type=str)
         parser.add_value_provider_argument('--output', type=str)
-
-
 user_params = pipeline_options.view_as(UserOptions)
 
+
+class ReduceVideosStats(beam.PTransform):
+    def __init__(self, kind, output):
+        super(ReduceVideosStats, self).__init__()
+        self.kind = kind
+        self.time = time.ctime()
+        self.output = output
+    def expand(self, pvalue):
+        outName = self.time+'--'+self.kind+'.txt'
+        return (pvalue |
+                    'strip chunk keys' >> beam.ParDo(stripChunks()) |
+                    'recombine video' >> beam.CombinePerKey(combineStats()) |
+                    'to JSON' >> beam.ParDo(toJSON()) |
+                    'WriteFullOutput' >> WriteToText(self.output,
+                                                     shard_name_template='',
+                                                     file_name_suffix=outName))
+
+
 with beam.Pipeline(options=pipeline_options) as p:
-    timeString = time.ctime()
-    # files = (p | 'Read nd2' >> ReadFromND2Vid(user_params.input))
-    files = (p | 'Read tif' >> ReadFromTIFVid(user_params.input))
-    goodFiles, badFiles = files
-    (
-    goodFiles |
-        beam.ParDo(stripChunks()) |
-        'recombine video' >> beam.CombinePerKey(combineStats()) |
-        'to JSON' >> beam.ParDo(toJSON()) |
-        'WriteFullOutput' >> WriteToText(user_params.output,
-                                         shard_name_template='',
-                                         file_name_suffix=timeString+'.txt')
-    )
-    (
-    badFiles |
-        'failed to JSON' >> beam.ParDo(toJSON()) |
-        'failed output' >> WriteToText(user_params.output,
-                                       shard_name_template='',
-                                       file_name_suffix=timeString+'-failedFiles.txt')
-    )
+
+    nd2Files = p | 'Read nd2' >> ReadFromND2Vid(user_params.input)
+    nd2GoodFiles, nd2BadFiles = nd2Files
+
+    tifFiles = p | 'Read tif' >> ReadFromTIFVid(user_params.input)
+    tifGoodFiles, tifBadFiles = tifFiles
+
+    nd2GoodFiles | 'ND2 Pipeline' >> ReduceVideosStats('nd2', user_params.output)
+    tifGoodFiles | 'TIF Pipeline' >> ReduceVideosStats('tif', user_params.output)
+
+    # (nd2BadFiles |
+    #     'nfailed files to JSON' >> beam.ParDo(toJSON()) |
+    #     'nfailed files output' >> WriteToText(user_params.output,
+    #                                          file_name_suffix='--nd2-failedFiles.txt')
+    # )
+    # (tifBadFiles |
+    #     'tfailed files to JSON' >> beam.ParDo(toJSON()) |
+    #     'tfailed files output' >> WriteToText(user_params.output,
+    #                                          file_name_suffix='--tif-failedFiles.txt')
+    # )

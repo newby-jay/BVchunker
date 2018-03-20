@@ -19,16 +19,38 @@ import apache_beam as beam
 from apache_beam.transforms import PTransform
 from apache_beam.io import filebasedsource, ReadFromText, WriteToText, iobase
 from apache_beam.io.iobase import Read
+from apache_beam.options.value_provider import StaticValueProvider
+from apache_beam.options.value_provider import ValueProvider
+from apache_beam.options.value_provider import check_accessible
 
+
+# class tiffBlob(RuntimeValueProvider):
+#     def __init__(self, rvp):
+#         super(tiffBlob, self).__init__(rvp.option_name, rvp.value_type, rvp.default_value)
+#     def get(self):
+#         if RuntimeValueProvider.runtime_options is None:
+#             raise error.RuntimeValueProviderError('%s.get() not called from a runtime context' % self)
+#         candidate = RuntimeValueProvider.runtime_options.get(self.option_name)
+#         if candidate:
+#             value = os.path.join(self.value_type(candidate), '**.tif')
+#         else:
+#             value = self.default_value
+#         return value
 
 class ReadFromTIFVid(PTransform):
     """A PTransform for reading TIF video files."""
 
-    def __init__(self, file_pattern=None, chunkShape=None, Overlap=None, downSample=1):
+    def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFromTIFVid``."""
         super(ReadFromTIFVid, self).__init__()
-        self._source = _TIFSource(file_pattern, chunkShape, Overlap, downSample)
-
+        if isinstance(path, basestring):
+            path = StaticValueProvider(str, path)
+        blob = StaticValueProvider(str, '**.tif')
+        if path.is_accessible() and blob.is_accessible():
+            pattern = os.path.join(path.get(), blob.get())
+        else:
+            pattern = ''
+        self._source = _TIFSource(pattern, chunkShape, Overlap, downSample)
     def expand(self, pvalue):
         frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
         goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
@@ -39,14 +61,14 @@ class ReadFromTIFVid(PTransform):
 class _TIFutils:
     def __init__(self):
         self.TAGS = {256: 'ImageWidth',
-                    256: 'ImageHeight',
-                    258: 'BitsPerSample',
-                    259: 'Compression',
-                    270: 'ImageDescription',
-                    273: 'StripOffsets',
-                    278: 'RowsPerStrip',
-                    279: 'StripByteCounts',
-                    324: 'TileOffsets'}
+                     256: 'ImageHeight',
+                     258: 'BitsPerSample',
+                     259: 'Compression',
+                     270: 'ImageDescription',
+                     273: 'StripOffsets',
+                     278: 'RowsPerStrip',
+                     279: 'StripByteCounts',
+                     324: 'TileOffsets'}
         self.TIFtypes = {2: 'ascii',
                          3: 'short',
                          4: 'long',
@@ -112,7 +134,7 @@ class _TIFutils:
             numStrips, stripOffset = frameMD['stripOffsets']
             if numStrips == 1: # in this case, we live in a sane universe
                 frameOffsets.append(stripOffset)
-            else: # in this case, we have an offset to the actual offset--it can be anywhere in the file :D
+            else: # in this case, we have an offset to the actual offset
                 ind = stripOffset - A
                 if not 0 < ind + 4 < len(buf):
                     vfile.seek(stripOffset)
@@ -194,49 +216,18 @@ class _TIFutils:
             metaData = metaDataRaw.split()[:20]
             metaData = [m for m in metaData if '=' in m]
             metaData = dict(tuple(m.split('=')) for m in metaData)
-            Nt = int(metaData['frames'])
+            if 'frames' in metaData.keys():
+                Nt = int(metaData['frames'])
+            elif 'images' in metaData.keys():
+                Nt = int(metaData['images'])
             imgMD['Nt'] = Nt
-            Nz = int(metaData['slices'])
-            assert Nt == Nimages and Nz == 1 ## 3D not supported for this type
-            imgMD['Nz'] = Nz
-            # imgMD['Nz'] = 1
-            # imgMD['Nt'] = Nimages
+            # Nz = int(metaData['slices'])
+            imgMD['Nz'] = 1
             imgMD['dz'] = 1.0
             imgMD['dxy'] = 1.0
         return A, imgOffset, imgMD
 class _TIFSource(filebasedsource.FileBasedSource):
     """Read tif video into chunks."""
-    # DEFAULT_READ_BUFFER_SIZE = 8192
-    # class ReadBuffer(object):
-    # # A buffer that gives the buffered data and next position in the
-    # # buffer that should be read.
-    #     def __init__(self, data, position):
-    #         self._data = data
-    #         self._position = position
-    #
-    #     @property
-    #     def data(self):
-    #         return self._data
-    #
-    #     @data.setter
-    #     def data(self, value):
-    #         assert isinstance(value, bytes)
-    #         self._data = value
-    #
-    #     @property
-    #     def position(self):
-    #         return self._position
-    #
-    #     @position.setter
-    #     def position(self, value):
-    #         assert isinstance(value, (int, long))
-    #         if value > len(self._data):
-    #             raise ValueError('Cannot set position to %d since it\'s larger than '
-    #                              'size of data %d.', value, len(self._data))
-    #         self._position = value
-    #     def reset(self):
-    #         self.data = ''
-    #         self.position = 0
 
     def __init__(self, file_pattern, chunkShape=None, Overlap=None, downSample=1):
         super(_TIFSource, self).__init__(file_pattern, splittable=False, min_bundle_size=0, validate=False)
@@ -270,9 +261,6 @@ class _TIFSource(filebasedsource.FileBasedSource):
         nextBlockStart = -1
         def split_points_unclaimed(stopPosition):
             if nextBlockStart >= stopPosition:
-                # Next block starts at or after the suggested stop position. Hence
-                # there will not be split points to be claimed for the range ending at
-                # suggested stop position.
                 return 0
             return iobase.RangeTracker.SPLIT_POINTS_UNKNOWN
         range_tracker.set_split_points_unclaimed_callback(split_points_unclaimed)
@@ -283,7 +271,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
         with self.open_file(fileName) as vfile:
             try:
                 self._getSize(vfile)
-                if self.fileSize < 1024**3:
+                if self.fileSize < 1.5*1024**3:
                     vfile.seek(0)
                     mfile = StringIO()
                     mfile.write(vfile.read(self.fileSize))
@@ -328,16 +316,18 @@ class _TIFSource(filebasedsource.FileBasedSource):
                             yield chunk
                 else:
                     TU = _TIFutils()
+                    ## check if we have an imagej file, process like nd2 if so
+                    ## use a variant of the text reader otherwise
                     TU.fileSize = self.fileSize
                     A, imgOffset, imgMetadata = TU.readMetadata(vfile)
+                    bytesPerPixel = imgMetadata['pixelSizeBytes']
+                    assert bytesPerPixel == 1 or bytesPerPixel == 2
                     if bytesPerPixel == 1:
                         dt = dtype('uint8').newbyteorder(TU.E)
                     elif bytesPerPixel == 2:
                         dt = dtype('uint16').newbyteorder(TU.E)
                     imgMetadata['fileSize'] = self.fileSize
                     imgMetadata['fileName'] = fileName
-                    bytesPerPixel = imgMetadata['pixelSizeBytes']
-                    assert bytesPerPixel == 1 or bytesPerPixel == 2
                     shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
                     assert all(shape > 0)
                     Nt, Ny, Nx, Nz = shape
@@ -357,48 +347,5 @@ class _TIFSource(filebasedsource.FileBasedSource):
                             vfile.seek(frameOffset)
                         for chunk in splitter.iterChunks(n + 1, frame):
                             yield chunk
-            except:
-                yield ('File Not Processed', fileName)
-
-        # with self.open_file(fileName) as vfile:
-        #     self._getSize(vfile)
-        #     TU = _TIFutils()
-        #     offsets, imgMetadata = TU.readMetadata(vfile)
-        #     imgMetadata['fileSize'] = self.fileSize
-        #     imgMetadata['fileName'] = fileName
-        #     bytesPerPixel = imgMetadata['pixelSizeBytes']
-        #     assert bytesPerPixel == 1 or bytesPerPixel == 2
-        #     shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
-        #     assert all(shape > 0)
-        #     Nt, Ny, Nx, Nz = shape
-        #     frameSizeBytes = bytesPerPixel*Ny*Nx
-        #     assert offsets[0] > 0
-        #     assert all(diff(offsets) >= frameSizeBytes)
-        #     assert offsets[-1] <= self.fileSize - frameSizeBytes
-        #
-        #     if startOffset is None:
-        #         startOffset = offsets[0]
-        #     if not startOffset in offsets:
-        #         n = searchsorted(offsets, startOffset)
-        #         if n < offsets.size:
-        #             startOffset = offsets[n]
-        #     vfile.seek(startOffset)
-        #     while range_tracker.try_claim(vfile.tell()):
-        #         n = searchsorted(offsets, vfile.tell()) + 1
-        #         if n > offsets.size:
-        #             break
-        #         record = vfile.read(frameSizeBytes)
-        #         if bytesPerPixel == 1:
-        #             dt = dtype('uint8').newbyteorder(TU.E)
-        #         elif bytesPerPixel == 2:
-        #             dt = dtype('uint16').newbyteorder(TU.E)
-        #         frame = frombuffer(record, dt).reshape(Ny, Nx)
-        #         assert all(isfinite(frame))
-        #         if n < offsets.size:
-        #             nextBlockStart = offsets[n]
-        #             startOffset = offsets[n]
-        #             vfile.seek(startOffset)
-        #         else:
-        #             vfile.seek(self.fileSize)
-        #         for chunk in splitter.iterChunks(n, frame):
-        #             yield chunk
+            except Exception as inst:
+                yield ('File Not Processed', [fileName, type(inst), inst.args, inst])

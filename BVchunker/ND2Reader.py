@@ -15,16 +15,24 @@ import apache_beam as beam
 from apache_beam.transforms import PTransform
 from apache_beam.io import filebasedsource, ReadFromText, WriteToText, iobase
 from apache_beam.io.iobase import Read
-
+from apache_beam.options.value_provider import StaticValueProvider
+from apache_beam.options.value_provider import ValueProvider
+from apache_beam.options.value_provider import check_accessible
 
 class ReadFromND2Vid(PTransform):
     """A ``PTransform`` for reading Nikon nd2 video files."""
 
-    def __init__(self, file_pattern=None, chunkShape=None, Overlap=None, downSample=1):
+    def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFromND2Vid``."""
         super(ReadFromND2Vid, self).__init__()
-        self._source = _ND2Source(file_pattern, chunkShape, Overlap, downSample)
-
+        if isinstance(path, basestring):
+            path = StaticValueProvider(str, path)
+        blob = StaticValueProvider(str, '**.nd2')
+        if path.is_accessible() and blob.is_accessible():
+            pattern = os.path.join(path.get(), blob.get())
+        else:
+            pattern = ''
+        self._source = _ND2Source(pattern, chunkShape, Overlap, downSample)
     def expand(self, pvalue):
         frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
         goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
