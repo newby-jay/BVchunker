@@ -1,15 +1,16 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-from numpy import *
-from numpy.random import rand
 import os
 import sys
 import time
-import pandas as pd
+
 from itertools import product
-import BVchunker
-from BVchunker.BeamTools import VideoSplitter, combineTZ, splitBadFiles
+
+from numpy import *
+from numpy.random import rand
+import pandas as pd
+from BVchunker import VideoSplitter, combineTZ, splitBadFiles
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -25,21 +26,23 @@ class ReadFromND2Vid(PTransform):
     def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFromND2Vid``."""
         super(ReadFromND2Vid, self).__init__()
-        if isinstance(path, basestring):
-            path = StaticValueProvider(str, path)
-        blob = StaticValueProvider(str, '**.nd2')
-        if path.is_accessible() and blob.is_accessible():
-            pattern = os.path.join(path.get(), blob.get())
-        else:
-            pattern = ''
-        self._source = _ND2Source(pattern, chunkShape, Overlap, downSample)
+        # if isinstance(path, basestring):
+        #     path = StaticValueProvider(str, path)
+        # blob = StaticValueProvider(str, '**.nd2')
+        # if path.is_accessible() and blob.is_accessible():
+        #     pattern = os.path.join(path.get(), blob.get())
+        # else:
+        #     pattern = ''
+        # pattern = os.path.join(path, '**.nd2')
+        self._source = _ND2Source(path, chunkShape, Overlap, downSample)
     def expand(self, pvalue):
         frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
         goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
         return goodFiles, frames[0]
-
+        # return frames | beam.CombinePerKey(combineTZ())
     def display_data(self):
         return {'source_dd': self._source}
+
 class _ND2utils:
     @staticmethod
     def findFooterOffset(vfile):
@@ -74,10 +77,12 @@ class _ND2utils:
             vfile.seek(start)
         assert 0 < filemapOffset < size
         vfile.seek(filemapOffset)
+        assert size - filemapOffset < 1e8
         footer = vfile.read(size - filemapOffset)
         ind = footer.index('ImageAttributesLV!') + len('ImageAttributesLV!')
         mdos = frombuffer(footer[ind:ind+16], 'int64')
         vfile.seek(int(mdos[0]) + 16)
+        assert filemapOffset - mdos[0] - 16 < 1e8
         mdAtributesBytes = vfile.read(filemapOffset - mdos[0] - 16)
         ind = footer.index('ImageCalibrationLV|0!') + len('ImageCalibrationLV|0!')
         mdos = frombuffer(footer[ind:ind+16], 'int64')
@@ -135,9 +140,10 @@ class _ND2utils:
         val = metadataBytes[ind + di: ind + di + 8][1::2].split('\r')[0]
         imgMD['Nt'] = int(val)
         imgMD['Nz'] = int(Nrecords/imgMD['Nt'])
-        imgMD['raw'] = metadataText
+        # imgMD['raw'] = metadataText
         imgMD['fileSize'] = size
         return offsetData, imgMD
+
 class _ND2Source(filebasedsource.FileBasedSource):
     """An experiment.
     """
@@ -181,6 +187,8 @@ class _ND2Source(filebasedsource.FileBasedSource):
             try:
                 offsetData, imgMetadata = _ND2utils.readMetadata(vfile)
                 fileSize = imgMetadata['fileSize']
+                # assert 1024**3 < fileSize < 2*1024**3
+                # assert fileSize > 2*1024**3
                 imgMetadata['fileName'] = fileName
                 bytesPerPixel = imgMetadata['NxBytes']/imgMetadata['Nx']
                 assert bytesPerPixel == 2 # must be 16bit and single channel
@@ -192,13 +200,16 @@ class _ND2Source(filebasedsource.FileBasedSource):
                 labelShifts = array([len(offsetData[ind][0]) for ind in inds], 'int')
                 shape = tuple(int(imgMetadata[k]) for k in ['Nt', 'Ny', 'Nx', 'Nz'])
                 assert all(shape > 0)
+                assert 2*prod(shape) < fileSize
                 Nt, Ny, Nx, Nz = shape
+                assert Nt*Nz == offsets.size
                 frameSizeBytes = 2*Nx*Ny
                 assert all(diff(offsets) > frameSizeBytes)
                 assert offsets[-1] <= fileSize - frameSizeBytes
                 recordSize = zeros_like(offsets)
                 recordSize[:-1] = diff(offsets)
                 recordSize[-1] = diff(offsets).max()
+                assert all(recordSize < 2e8)
                 splitter = self._getSplitter(imgMetadata)
                 if startOffset is None:
                     startOffset = offsets[0]
@@ -211,6 +222,7 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     n = searchsorted(offsets, vfile.tell()) + 1
                     if n > offsets.size:
                         break
+                    assert recordSize[n-1] < 2e8
                     record = vfile.read(recordSize[n-1])
                     key = 'ImageDataSeq|{0}!'.format(int(n-1))
                     i = record.index(key)
@@ -221,7 +233,13 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     # assert len(db0) == frameShift[1]
                     timeStampMaybe = db0[:8]
                     db = db0[8: frameSizeBytes + 8]
-                    frame = frombuffer(db, 'uint16').reshape(Ny, Nx)
+                    frame = frombuffer(db, 'uint16') \
+                        .reshape(Ny, Nx) \
+                        .copy() \
+                        .clip(None, 1000)
+                    frame = uint16(frame)
+                    # frame = 1000*ones(frame1.shape, 'uint16')
+                    # frame[frame > 1000] = 1000
                     assert all(isfinite(frame))
                     if n < offsets.size:
                         nextBlockStart = offsets[n]

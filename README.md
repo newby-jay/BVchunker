@@ -21,6 +21,10 @@ Out of those I've tested, only OME TIF files have sufficient metadata to do 3D t
     - I think I can fix this issue using TIFReader-experimental by setting a flag so that it is set to either the beginning or end of the block.
   - Expand to recognize and handle BIGTIF files (magic number 43 and 64 bit offset blocks)
 
+## PIMS reader - April 1
+I added a "PIMS" reader that can be used to process a wide range of file types. The downside is that it requires a large local hard drive for all workers. Videos are downloaded locally first and then processed into the pipeline. This adds to the cost of running the pipeline, particularly for sets with large videos. The PD size must be set to around 4-5 times the size of the largest video in the set.
+   - Using a StringIO buffer does not work with the PIMS package because it does not accept a file object as input. If this ever changes, we can add a faster sub reader, like the one in the TIFReader, for small videos that can fit in memory.
+
 ## Future file reader types
   - AVI: The format looks friendly enough. The frame offsets should be stored in the footer. I want to provide limited AVI support, particularly for those that are generated with the popular Matlab control software.
   - OME XML: This should be easy to provide, but might not have many users. Processing would be a simple extension of the text reader in the Beam package. Compressed files should be straightforward to handle.

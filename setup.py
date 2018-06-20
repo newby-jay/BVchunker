@@ -96,6 +96,9 @@ class CustomCommands(setuptools.Command):
 # so this dependency will not trigger anything to be installed unless a version
 # restriction is specified.
 REQUIRED_PACKAGES = ['numpy', 'scipy', 'pandas']
+# For the PIMS package
+REQUIRED_PACKAGES.extend(['libtiff', 'tifffile', 'imageio',
+                          'Pillow', 'pims', 'pims_nd2'])
 
 
 setuptools.setup(

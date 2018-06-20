@@ -1,14 +1,18 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-from numpy import *
-from numpy.random import rand
 import os
 import sys
 import time
 
+from numpy import *
+from numpy.random import rand
 import pandas as pd
 from itertools import product
+import tifffile as tifg
+import tempfile
+from cStringIO import StringIO
+import zipfile
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -16,10 +20,13 @@ from apache_beam.io import filebasedsource, ReadFromText, WriteToText, iobase
 from apache_beam.io.iobase import Read
 
 class VideoSplitter:
-    """Break a multidimensional array into chunks of size chunkShape, with overlap size of size Overlap."""
+    """Break a multidimensional array into chunks of
+    size `chunkShape`, with overlap size of size `Overlap`."""
+
     def __init__(self, imgMetadata,
-                 chunkShape=[16, 256, 256, 16],
+                 chunkShape=[16, 256, 256, 50],
                  Overlap=[2, 16, 16, 2], downSample=1):
+        # downSample = 2
         chunkShape = array(chunkShape)
         Overlap = array(Overlap)
         self.downSample = int(downSample)
@@ -37,9 +44,9 @@ class VideoSplitter:
         self.imgMetadata['Nx'] = int(self.imgMetadata['Nx']/self.downSample)
         self.imgMetadata['dxy'] *= float(self.downSample)
         vidShape = array([self.imgMetadata['Nt'],
-                         int(self.imgMetadata['Ny']/self.downSample),
-                         int(self.imgMetadata['Nx']/self.downSample),
-                         self.imgMetadata['Nz']])
+                          self.imgMetadata['Ny'],
+                          self.imgMetadata['Nx'],
+                          self.imgMetadata['Nz']])
         for n in arange(4):
             if vidShape[n] <= chunkShape[n]:
                 chunkShape[n] = vidShape[n]
@@ -112,7 +119,9 @@ class VideoSplitter:
             guide, _ = self.getGuide((0, ny, nx, 0))
             X, Y = meshgrid(guide['x'], guide['y'])
             frameChunk = frame[Y, X]
-            for nt, nz in product(arange(self.Nchunks[0]), arange(self.Nchunks[3])):
+            for nt, nz in product(
+                arange(self.Nchunks[0]),
+                arange(self.Nchunks[3])):
                 tA, tB, zA, zB = self.getRange((nt, ny, nx, nz))
                 assert tA <= tB and zA <= zB
                 if not tA <= t <= tB or not zA <= z <= zB:
@@ -130,15 +139,18 @@ class VideoSplitter:
                 assert guide['t'].size == self.chunkShape[0] + 2*self.Overlap[0]
                 indst = arange(guide['t'].size)[t == guide['t']]
                 indsz = arange(guide['z'].size)[z == guide['z']]
-                key = metadata['fileName'] + '-{0}-{1}-{2}-{3}'.format(nt, ny, nx, nz)
+                key = metadata['fileName']
+                key += '-{0}-{1}-{2}-{3}'.format(nt, ny, nx, nz)
                 for localt, localz in product(indst, indsz):
                     output = {'t': localt, 'z': localz,
                               'frame': frameChunk,
                               'stats': (frameMean, frameVar),
                               'metadata': metadata}
                     yield (key, output)
+
 class combineTZ(beam.CombineFn):
     """Combines a collection of 2D image frames into 4D TYXZ arrays."""
+
     def __init__(self):
         pass
     def create_accumulator(self):
@@ -196,8 +208,11 @@ class combineTZ(beam.CombineFn):
         return {'videoData': outVid,
                 'stats': stats,
                 'metadata': metadata}
+
 class remapPoints(beam.DoFn):
-    """Remap points in a DataFrame from local chunk coordinates to global video coordinates."""
+    """Remap points in a DataFrame from local chunk
+    coordinates to global video coordinates."""
+
     def __init__(self):
         pass
     def process(self, KVelement):
@@ -228,12 +243,15 @@ class remapPoints(beam.DoFn):
                   'metadata': mdout}
         newKey = md['fileName']
         yield (newKey, output)
+
 class combinePointset(beam.CombineFn):
-    """Combine a collection of Pandas DataFrames containing points into a single DataFrame."""
+    """Combine a collection of Pandas DataFrames
+    containing points into a single DataFrame."""
+
     def __init__(self, columns=['x', 'y', 'z', 't']):
         self.columns = columns
     def create_accumulator(self):
-        PS = zeros((0, 6))
+        PS = zeros((0, len(self.columns)))
         return PS, {}
     def add_input(self, A, element):
         APS, Amd = A
@@ -253,14 +271,19 @@ class combinePointset(beam.CombineFn):
         mdout = dict((k, md[k]) for k in md if k != 'slice')
         return {'pointSet': pd.DataFrame(PS, columns=self.columns),
                 'metadata': mdout}
+
 class stripChunks(beam.DoFn):
+
     def __init__(self):
         pass
     def process(self, KVelement):
         key, element = KVelement
         yield (element['metadata']['fileName'], element)
+
 class combineStats(beam.CombineFn):
-    """Reduce video chunks and extract mean and standard deviation. Intended for testing purposes."""
+    """Reduce video chunks and extract mean and standard deviation.
+    Intended for testing purposes."""
+
     def __init__(self):
         pass
     def create_accumulator(self):
@@ -289,11 +312,14 @@ class combineStats(beam.CombineFn):
                'count': c,
                'Nframes': f}
         return out
+
 class toJSON(beam.DoFn):
+
     def __init__(self):
         pass
     def process(self, element):
         yield pd.json.dumps({element[0]: element[1]})
+
 def splitBadFiles(KVelement, N):
     key, element = KVelement
     return int(key != 'File Not Processed')

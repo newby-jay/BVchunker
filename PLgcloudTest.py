@@ -10,6 +10,7 @@ import time
 import BVchunker
 from BVchunker.ND2Reader import ReadFromND2Vid
 from BVchunker.TIFReader import ReadFromTIFVid
+from BVchunker.PIMSReader import ReadFromPIMSVid
 from BVchunker.BeamTools import *
 
 import pandas as pd
@@ -24,6 +25,8 @@ from apache_beam.transforms import PTransform
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--input', type=str, default='inputFolder/')
+parser.add_argument('--output', type=str, default='outputFolder/')
 known_args, pipeline_args = parser.parse_known_args()
 
 pipeline_args.extend([
@@ -36,13 +39,6 @@ pipeline_args.extend([
   # '--experiments=shuffle_mode=service',
 ])
 pipeline_options = PipelineOptions(pipeline_args)
-class UserOptions(PipelineOptions):
-    @classmethod
-    def _add_argparse_args(cls, parser):
-        parser.add_value_provider_argument('--input', type=str)
-        parser.add_value_provider_argument('--output', type=str)
-user_params = pipeline_options.view_as(UserOptions)
-
 
 class ReduceVideosStats(beam.PTransform):
     def __init__(self, kind, output):
@@ -63,22 +59,10 @@ class ReduceVideosStats(beam.PTransform):
 
 with beam.Pipeline(options=pipeline_options) as p:
 
-    nd2Files = p | 'Read nd2' >> ReadFromND2Vid(user_params.input)
-    nd2GoodFiles, nd2BadFiles = nd2Files
+    nd2Files = p | 'Read nd2' >> ReadFromND2Vid(os.path.join(known_args.input, '**.nd2'))
+    # tifFiles = p | 'Read tif' >> ReadFromTIFVid(os.path.join(known_args.input, '**.tif'))
+    pimsFiles = p | 'Read pims' >> ReadFromPIMSVid(os.path.join(known_args.input, '**.*'))
 
-    tifFiles = p | 'Read tif' >> ReadFromTIFVid(user_params.input)
-    tifGoodFiles, tifBadFiles = tifFiles
-
-    nd2GoodFiles | 'ND2 Pipeline' >> ReduceVideosStats('nd2', user_params.output)
-    tifGoodFiles | 'TIF Pipeline' >> ReduceVideosStats('tif', user_params.output)
-
-    # (nd2BadFiles |
-    #     'nfailed files to JSON' >> beam.ParDo(toJSON()) |
-    #     'nfailed files output' >> WriteToText(user_params.output,
-    #                                          file_name_suffix='--nd2-failedFiles.txt')
-    # )
-    # (tifBadFiles |
-    #     'tfailed files to JSON' >> beam.ParDo(toJSON()) |
-    #     'tfailed files output' >> WriteToText(user_params.output,
-    #                                          file_name_suffix='--tif-failedFiles.txt')
-    # )
+    nd2Files | 'ND2 Pipeline' >> ReduceVideosStats('nd2', known_args.output)
+    # tifFiles | 'TIF Pipeline' >> ReduceVideosStats('tif', known_args.output)
+    pimsFiles | 'PIMS Pipeline' >> ReduceVideosStats('pims', known_args.output)

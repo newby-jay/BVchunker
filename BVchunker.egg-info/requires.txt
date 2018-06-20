@@ -1,3 +1,9 @@
 numpy
 scipy
 pandas
+libtiff
+tifffile
+imageio
+Pillow
+pims
+pims_nd2

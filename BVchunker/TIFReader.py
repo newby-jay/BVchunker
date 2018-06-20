@@ -1,19 +1,18 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-from numpy import *
-from numpy.random import rand
 import os
 import sys
 import time
-import pandas as pd
 from itertools import product
-import BVchunker
-from BVchunker.BeamTools import VideoSplitter, combineTZ, splitBadFiles
-import BVchunker.tifffile as tif
-
 import xml.etree.ElementTree as ET
 from cStringIO import StringIO
+
+from numpy import *
+from numpy.random import rand
+import pandas as pd
+from BVchunker import VideoSplitter, combineTZ, splitBadFiles
+import BVchunker.tifffile_local as tif
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -43,19 +42,20 @@ class ReadFromTIFVid(PTransform):
     def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFromTIFVid``."""
         super(ReadFromTIFVid, self).__init__()
-        if isinstance(path, basestring):
-            path = StaticValueProvider(str, path)
-        blob = StaticValueProvider(str, '**.tif')
-        if path.is_accessible() and blob.is_accessible():
-            pattern = os.path.join(path.get(), blob.get())
-        else:
-            pattern = ''
+        # if isinstance(path, basestring):
+        #     path = StaticValueProvider(str, path)
+        # blob = StaticValueProvider(str, '**.tif')
+        # if path.is_accessible() and blob.is_accessible():
+        #     pattern = os.path.join(path.get(), blob.get())
+        # else:
+        #     pattern = ''
+        pattern = os.path.join(path, '**.tif')
         self._source = _TIFSource(pattern, chunkShape, Overlap, downSample)
     def expand(self, pvalue):
-        frames = pvalue.pipeline | Read(self._source) | beam.Partition(splitBadFiles, 2)
-        goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
-        return goodFiles, frames[0]
-
+        frames = pvalue.pipeline | Read(self._source) #| beam.Partition(splitBadFiles, 2)
+        # goodFiles = frames[1] | beam.FlatMap(lambda e: [e]) | beam.CombinePerKey(combineTZ())
+        # return goodFiles, frames[0]
+        return frames | beam.CombinePerKey(combineTZ())
     def display_data(self):
         return {'source_dd': self._source}
 class _TIFutils:

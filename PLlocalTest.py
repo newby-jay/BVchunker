@@ -7,10 +7,10 @@ from numpy.random import rand
 import os
 import sys
 import time
-import BVchunker
+from BVchunker import *
 from BVchunker.ND2Reader import ReadFromND2Vid
 from BVchunker.TIFReader import ReadFromTIFVid
-from BVchunker.BeamTools import *
+from BVchunker.PIMSReader import ReadFromPIMSVid
 
 import pandas as pd
 import argparse
@@ -23,8 +23,8 @@ from apache_beam.options.pipeline_options import SetupOptions
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output', dest='output')
-parser.add_argument('--input', dest='input')
+parser.add_argument('--input', type=str, default='inputFolder/')
+parser.add_argument('--output', type=str, default='outputFolder/')
 known_args, pipeline_args = parser.parse_known_args()
 
 pipeline_args.extend([
@@ -51,22 +51,10 @@ class ReduceVideosStats(beam.PTransform):
 
 with beam.Pipeline(options=pipeline_options) as p:
 
-    nd2Files = p | 'Read nd2' >> ReadFromND2Vid(known_args.input)
-    nd2GoodFiles, nd2BadFiles = nd2Files
+    nd2Files = p | 'Read nd2' >> ReadFromND2Vid(os.path.join(known_args.input, '**.nd2'))
+    tifFiles = p | 'Read tif' >> ReadFromTIFVid(os.path.join(known_args.input, '**.tif'))
+    pimsFiles = p | 'Read pims' >> ReadFromPIMSVid(os.path.join(known_args.input, '**.*'))
 
-    tifFiles = p | 'Read tif' >> ReadFromTIFVid(known_args.input)
-    tifGoodFiles, tifBadFiles = tifFiles
-
-    nd2GoodFiles | 'ND2 Pipeline' >> ReduceVideosStats('nd2', known_args.output)
-    tifGoodFiles | 'TIF Pipeline' >> ReduceVideosStats('tif', known_args.output)
-
-    # (nd2BadFiles |
-    #     'nfailed files to JSON' >> beam.ParDo(toJSON()) |
-    #     'nfailed files output' >> WriteToText(known_args.output,
-    #                                          file_name_suffix='--nd2-failedFiles.txt')
-    # )
-    # (tifBadFiles |
-    #     'tfailed files to JSON' >> beam.ParDo(toJSON()) |
-    #     'tfailed files output' >> WriteToText(known_args.output,
-    #                                          file_name_suffix='--tif-failedFiles.txt')
-    # )
+    nd2Files | 'ND2 Pipeline' >> ReduceVideosStats('nd2', known_args.output)
+    tifFiles | 'TIF Pipeline' >> ReduceVideosStats('tif', known_args.output)
+    pimsFiles | 'PIMS Pipeline' >> ReduceVideosStats('pims', known_args.output)

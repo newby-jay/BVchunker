@@ -1,19 +1,18 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
-from numpy import *
-from numpy.random import rand
 import os
 import sys
 import time
 import pandas as pd
 from itertools import product
-import BVchunker
-from BVchunker.BeamTools import VideoSplitter, combineTZ, splitBadFiles
-import BVchunker.tifffile as tif
-
 import xml.etree.ElementTree as ET
 from cStringIO import StringIO
+
+from numpy import *
+from numpy.random import rand
+from BVchunker import VideoSplitter, combineTZ, splitBadFiles
+import BVchunker.tifffile_local as tif
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
