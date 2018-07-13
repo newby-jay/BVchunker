@@ -28,3 +28,4 @@ I added a "PIMS" reader that can be used to process a wide range of file types. 
 ## Future file reader types
   - AVI: The format looks friendly enough. The frame offsets should be stored in the footer. I want to provide limited AVI support, particularly for those that are generated with the popular Matlab control software.
   - OME XML: This should be easy to provide, but might not have many users. Processing would be a simple extension of the text reader in the Beam package. Compressed files should be straightforward to handle.
+  - HDF5: an open format. I'm not sure how often it is used for microscopy videos.
