@@ -25,7 +25,11 @@ Out of those I've tested, only OME TIF files have sufficient metadata to do 3D t
 I added a "PIMS" reader that can be used to process a wide range of file types. The downside is that it requires a large local hard drive for all workers. Videos are downloaded locally first and then processed into the pipeline. This adds to the cost of running the pipeline, particularly for sets with large videos. The PD size must be set to around 4-5 times the size of the largest video in the set.
    - Using a StringIO buffer does not work with the PIMS package because it does not accept a file object as input. If this ever changes, we can add a faster sub reader, like the one in the TIFReader, for small videos that can fit in memory.
 
+## PIMS reader August 15th
+I have a working TIF reader for 2D (generic TIF) and 3D (OME TIF only). I read the first IFD and generate a regular expression pattern for subsequent IFDs, based on matching the number of TAGs and up to four TAG types that should be consistent throughout the video (image size, pixel type, compression type). There is also support for regular TIF and BIG TIFF.
+
+I solved the problem of detecting the number of frames, which is not consistently in the metadata. Offset data records are output in a separate tagged Pcollection. Offset data is organized (also counting the number of frames) and passed to the BVchunker node as a side input.
+
 ## Future file reader types
   - AVI: The format looks friendly enough. The frame offsets should be stored in the footer. I want to provide limited AVI support, particularly for those that are generated with the popular Matlab control software.
-  - OME XML: This should be easy to provide, but might not have many users. Processing would be a simple extension of the text reader in the Beam package. Compressed files should be straightforward to handle.
   - HDF5: an open format. I'm not sure how often it is used for microscopy videos.

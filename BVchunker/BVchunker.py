@@ -12,7 +12,7 @@ from itertools import product
 import tempfile
 from cStringIO import StringIO
 import zipfile
-
+from google.cloud import logging
 import apache_beam as beam
 from apache_beam.transforms import PTransform
 from apache_beam.io import filebasedsource, ReadFromText, WriteToText, iobase
@@ -199,9 +199,9 @@ class combineTZ(beam.CombineFn):
         assert all((Ny, Nx) == vid[0].shape)
         n = t*Nz + z
         inds = n.argsort()
-        assert all(diff(n[inds]) == 1) # check if missing frames
+        assert all(diff(n[inds]) <= 1) # check if missing frames
+        assert unique(n).size == n.size # check if duplicates
         assert n.size == Nt*Nz
-        assert unique(n).size == n.size
         outVid = vid[inds].reshape(Nt, Nz, Ny, Nx).transpose(0, 2, 3, 1)
         stats = stats[inds].reshape(Nt, Nz, 2)
         return {'videoData': outVid,

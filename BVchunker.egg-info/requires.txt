@@ -7,3 +7,6 @@ imageio
 Pillow
 pims
 pims_nd2
+google-cloud
+google-cloud-error-reporting
+google-cloud-logging==1.6.0

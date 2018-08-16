@@ -97,8 +97,16 @@ class CustomCommands(setuptools.Command):
 # restriction is specified.
 REQUIRED_PACKAGES = ['numpy', 'scipy', 'pandas']
 # For the PIMS package
-REQUIRED_PACKAGES.extend(['libtiff', 'tifffile', 'imageio',
-                          'Pillow', 'pims', 'pims_nd2'])
+REQUIRED_PACKAGES.extend([
+    'libtiff',
+    'tifffile',
+    'imageio',
+    'Pillow',
+    'pims',
+    'pims_nd2',
+    'google-cloud',
+    'google-cloud-error-reporting',
+    'google-cloud-logging==1.6.0'])
 
 
 setuptools.setup(
