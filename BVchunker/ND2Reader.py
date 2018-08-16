@@ -7,6 +7,8 @@ import time
 
 from itertools import product
 
+from google.cloud import error_reporting, logging
+
 from numpy import *
 from numpy.random import rand
 import pandas as pd
@@ -262,4 +264,24 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     for chunk in splitter.iterChunks(n, frame):
                         yield chunk
             except:
+                #print('Bad file HERE in ND2....')
+                #####
+                #print('checking error logging...')
+                client = error_reporting.Client()
+                client.report('File Not Processed: ' + fileName)
+                client.report_exception()
+                      
+                logging_client = logging.Client()
+                log_name = 'gems-pipeline-leen'
+                logger = logging_client.logger(log_name)
+                #text = 'unsupported file type ' + fileName 
+                #logger.log_text(text)
+                logmessage = {
+                	'Error': 'File cannot be read',
+                	'Filename': fileName
+                	}
+                logger.log_struct(logmessage)
+                
+                #print('Logged: {}'.format(text))                
+                #####
                 yield ('File Not Processed', fileName)
