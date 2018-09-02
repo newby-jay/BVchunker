@@ -4,14 +4,11 @@ from __future__ import absolute_import
 import os
 import sys
 import time
-
 from itertools import product
 
 from google.cloud import error_reporting, logging
-
 from numpy import *
 from numpy.random import rand
-import pandas as pd
 from BVchunker import VideoSplitter, combineTZ, splitBadFiles
 
 import apache_beam as beam
@@ -23,19 +20,11 @@ from apache_beam.options.value_provider import ValueProvider
 from apache_beam.options.value_provider import check_accessible
 
 class ReadFromND2Vid(PTransform):
-    """A ``PTransform`` for reading Nikon nd2 video files."""
+    """A ``PTransform`` for reading 2D or 3D Nikon ND2 video files."""
 
     def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFromND2Vid``."""
         super(ReadFromND2Vid, self).__init__()
-        # if isinstance(path, basestring):
-        #     path = StaticValueProvider(str, path)
-        # blob = StaticValueProvider(str, '**.nd2')
-        # if path.is_accessible() and blob.is_accessible():
-        #     pattern = os.path.join(path.get(), blob.get())
-        # else:
-        #     pattern = ''
-        # pattern = os.path.join(path, '**.nd2')
         self._source = _ND2Source(path, chunkShape, Overlap, downSample)
     def expand(self, pvalue):
         frames = (
@@ -43,13 +32,12 @@ class ReadFromND2Vid(PTransform):
                 | Read(self._source)
                 | beam.Partition(splitBadFiles, 2)
             )
-        goodFiles = (
+        chunks = (
             frames[1]
                 | beam.FlatMap(lambda e: [e])
                 | beam.CombinePerKey(combineTZ())
             )
-        return goodFiles, frames[0]
-        # return frames | beam.CombinePerKey(combineTZ())
+        return chunks
     def display_data(self):
         return {'source_dd': self._source}
 
@@ -264,24 +252,16 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     for chunk in splitter.iterChunks(n, frame):
                         yield chunk
             except:
-                #print('Bad file HERE in ND2....')
-                #####
-                #print('checking error logging...')
                 client = error_reporting.Client()
                 client.report('File Not Processed: ' + fileName)
                 client.report_exception()
-                      
+
                 logging_client = logging.Client()
-                log_name = 'gems-pipeline-leen'
+                log_name = 'ND2-reader'
                 logger = logging_client.logger(log_name)
-                #text = 'unsupported file type ' + fileName 
-                #logger.log_text(text)
                 logmessage = {
-                	'Error': 'File cannot be read',
-                	'Filename': fileName
-                	}
+                  'Error': 'File cannot be read',
+                  'Filename': fileName
+                }
                 logger.log_struct(logmessage)
-                
-                #print('Logged: {}'.format(text))                
-                #####
                 yield ('File Not Processed', fileName)

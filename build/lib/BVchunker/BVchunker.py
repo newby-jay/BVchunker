@@ -4,15 +4,15 @@ from __future__ import absolute_import
 import os
 import sys
 import time
-
-from numpy import *
-from numpy.random import rand
-import pandas as pd
-from itertools import product
 import tempfile
 from cStringIO import StringIO
 import zipfile
+
+from numpy import *
+from itertools import product
+import pandas as pd
 from google.cloud import logging
+
 import apache_beam as beam
 from apache_beam.transforms import PTransform
 from apache_beam.io import filebasedsource, ReadFromText, WriteToText, iobase
@@ -20,21 +20,22 @@ from apache_beam.io.iobase import Read
 
 class VideoSplitter:
     """Break a multidimensional array into chunks of
-    size `chunkShape`, with overlap size of size `Overlap`."""
+    size `chunkShape`, with overlap size of size
+    `Overlap`. Default output is to split all
+    image frames, individually."""
 
     def __init__(self, imgMetadata,
-                 chunkShape=[16, 256, 256, 50],
-                 Overlap=[2, 16, 16, 2], downSample=1):
+                 chunkShape=[1, inf, inf, 1],
+                 Overlap=[0, 0, 0, 0],
+                 downSample=1):
         # downSample = 2
         chunkShape = array(chunkShape)
-        Overlap = array(Overlap)
+        Overlap = int64(Overlap)
         self.downSample = int(downSample)
         assert downSample > 0
         self.imgMetadata = imgMetadata.copy()
-        assert all([key in self.imgMetadata.keys()
-                    for key in ['Nt', 'Ny', 'Nx', 'Nz',
-                                'fileName', 'fileSize', 'dxy', 'dz']
-                    ])
+        assert all([key in self.imgMetadata.keys() for key in
+            ['Nt', 'Ny', 'Nx', 'Nz', 'fileName', 'fileSize', 'dxy', 'dz']])
         assert self.imgMetadata['dxy'] > 0
         assert self.imgMetadata['dz'] > 0
         assert self.imgMetadata['fileSize'] > 0
@@ -42,27 +43,28 @@ class VideoSplitter:
         self.imgMetadata['Ny'] = int(self.imgMetadata['Ny']/self.downSample)
         self.imgMetadata['Nx'] = int(self.imgMetadata['Nx']/self.downSample)
         self.imgMetadata['dxy'] *= float(self.downSample)
-        vidShape = array([self.imgMetadata['Nt'],
-                          self.imgMetadata['Ny'],
-                          self.imgMetadata['Nx'],
-                          self.imgMetadata['Nz']])
+        vidShape = int64([
+            self.imgMetadata['Nt'],
+            self.imgMetadata['Ny'],
+            self.imgMetadata['Nx'],
+            self.imgMetadata['Nz']])
         for n in arange(4):
             if vidShape[n] <= chunkShape[n]:
                 chunkShape[n] = vidShape[n]
                 Overlap[n] = 0
+        chunkShape = int64(chunkShape)
         assert vidShape.size == 4
         assert chunkShape.size == 4
         assert Overlap.size == 4
         assert all(vidShape > 0)
         assert all(chunkShape > 0)
         assert all(Overlap >= 0)
-        Nt, Ny, Nx, Nz = vidShape
-        self.vidShape = vidShape
-        self.chunkShape = chunkShape
-        self.Overlap = Overlap
+        self.vidShape = int64(vidShape)
+        self.chunkShape = int64(chunkShape)
+        self.Overlap = int64(Overlap)
         self.Nchunks = int64(vidShape/chunkShape) + (vidShape % chunkShape > 0)
         padTotal = (chunkShape - (vidShape % chunkShape)) % chunkShape
-        self.Lpad = int64(padTotal/2) + padTotal % 2
+        self.Lpad = int64(padTotal/2) + int64(padTotal % 2)
         self.Rpad = int64(padTotal/2)
     def getRange(self, nChunk):
         GlobalRange = []
@@ -126,13 +128,13 @@ class VideoSplitter:
                 if not tA <= t <= tB or not zA <= z <= zB:
                     continue
                 guide, valid = self.getGuide((nt, ny, nx, nz))
-                metadata = {'validLocal': valid['validLocal'],
-                            'validGlobal': valid['validGlobal'],
-                            'chunkShape': self.chunkShape,
-                            'Overlap': self.Overlap,
-                            'vidShape': self.vidShape,
-                            'chunkIndex': (nt, ny, nx, nz),
-                            }
+                metadata = {
+                    'validLocal': valid['validLocal'],
+                    'validGlobal': valid['validGlobal'],
+                    'chunkShape': self.chunkShape,
+                    'Overlap': self.Overlap,
+                    'vidShape': self.vidShape,
+                    'chunkIndex': (nt, ny, nx, nz)}
                 for k in self.imgMetadata:
                     metadata[k] = self.imgMetadata[k]
                 assert guide['t'].size == self.chunkShape[0] + 2*self.Overlap[0]
@@ -141,10 +143,12 @@ class VideoSplitter:
                 key = metadata['fileName']
                 key += '-{0}-{1}-{2}-{3}'.format(nt, ny, nx, nz)
                 for localt, localz in product(indst, indsz):
-                    output = {'t': localt, 'z': localz,
-                              'frame': frameChunk,
-                              'stats': (frameMean, frameVar),
-                              'metadata': metadata}
+                    output = {
+                        't': localt,
+                        'z': localz,
+                        'frame': frameChunk,
+                        'stats': (frameMean, frameVar),
+                        'metadata': metadata}
                     yield (key, output)
 
 class combineTZ(beam.CombineFn):
@@ -204,9 +208,10 @@ class combineTZ(beam.CombineFn):
         assert n.size == Nt*Nz
         outVid = vid[inds].reshape(Nt, Nz, Ny, Nx).transpose(0, 2, 3, 1)
         stats = stats[inds].reshape(Nt, Nz, 2)
-        return {'videoData': outVid,
-                'stats': stats,
-                'metadata': metadata}
+        return {
+            'videoData': outVid,
+            'stats': stats,
+            'metadata': metadata}
 
 class remapPoints(beam.DoFn):
     """Remap points in a DataFrame from local chunk

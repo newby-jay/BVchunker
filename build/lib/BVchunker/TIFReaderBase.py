@@ -85,7 +85,7 @@ class FramesToChunks(beam.DoFn):
             client.report_exception()
 
             logging_client = logging.Client()
-            log_name = 'aits-pipeline-leen'
+            log_name = 'TIF-reader'
             logger = logging_client.logger(log_name)
             logmessage = {
                 'Error': 'File cannot be read',
@@ -490,7 +490,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
                 client.report_exception()
 
                 logging_client = logging.Client()
-                log_name = 'aits-pipeline-leen'
+                log_name = 'TIF-reader'
                 logger = logging_client.logger(log_name)
                 logmessage = {
                     'Error': 'File cannot be read',

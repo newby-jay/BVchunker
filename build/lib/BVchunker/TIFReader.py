@@ -12,7 +12,7 @@ from numpy import *
 import BVchunker.TIFReaderBase as tifbase
 
 class ReadFrom2DTIFVid(tifbase.ReadFromTIFBase):
-    """A PTransform for reading 2D TIF video files."""
+    """A PTransform for reading generic 2D TIF video files."""
 
     def __init__(self, path, chunkShape=None, Overlap=None, downSample=1):
         """Initializes ``ReadFrom2DTIFVid``."""

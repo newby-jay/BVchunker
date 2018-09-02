@@ -95,9 +95,10 @@ class CustomCommands(setuptools.Command):
 # Note that the Python Dataflow containers come with numpy already installed
 # so this dependency will not trigger anything to be installed unless a version
 # restriction is specified.
-REQUIRED_PACKAGES = ['numpy', 'scipy', 'pandas']
-# For the PIMS package
-REQUIRED_PACKAGES.extend([
+REQUIRED_PACKAGES = [
+    'numpy',
+    'scipy',
+    'pandas',
     'libtiff',
     'tifffile',
     'imageio',
@@ -106,7 +107,7 @@ REQUIRED_PACKAGES.extend([
     'pims_nd2',
     'google-cloud',
     'google-cloud-error-reporting',
-    'google-cloud-logging==1.6.0'])
+    'google-cloud-logging==1.6.0']
 
 
 setuptools.setup(
