@@ -1,5 +1,5 @@
 # Bio video data chunker
-Apache Beam library (in Python) for reading and splitting bio video data (currently just Nikon ND2 files) into chunks of specified size, containing specified overlap. Overlapping regions are useful when, for example, convolutional neural networks are used that require local image patches. Without overlap, artifacts would be introduced at the chunk boundaries. Beam transforms are included for reassembling (remapping and combining) unorganized position-times.
+Apache Beam library (in Python) for reading and splitting bio video data (currently TIF and Nikon ND2 files) into chunks of specified size, containing specified overlap. Overlapping regions are useful when, for example, convolutional neural networks are used that require local image patches. Without overlap, artifacts would be introduced at the chunk boundaries. Beam transforms are included for reassembling (remapping and combining) unorganized position-times.
 
 ## ND2 Reader
 I have a working ND2 file reader, tested on several files generated from at least two different labs and multiple microscopes. I have not processed all of the metadata, but have enough to do 3D tracking. There is no support for 8bit images or compressed files.
