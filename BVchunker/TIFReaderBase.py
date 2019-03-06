@@ -460,11 +460,11 @@ class _TIFSource(filebasedsource.FileBasedSource):
                     vfile.seek(imgOffset)
                     record = vfile.read(frameSizeBytes)
                     if Nc > 1:
-                        assert bytesPerPixel == 1, 'Color images must be 8 bit'
+                        # assert bytesPerPixel == 1, 'Color images must be 8 bit'
                         cframe = frombuffer(record, dType).reshape(Ny, Nx, Nc)
-                        cframe = float64(cframe).sum(axis=2)
-                        cframe -= data.min()
-                        frame = uint16(cframe)
+                        # cframe = float64(cframe).sum(axis=2)
+                        # cframe -= data.min()
+                        frame = cframe[..., 0]
                     else:
                         frame = frombuffer(record, dType).reshape(Ny, Nx)
                     assert all(isfinite(frame))

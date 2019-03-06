@@ -6,12 +6,13 @@ import sys
 import time
 import tempfile
 from cStringIO import StringIO
-import zipfile
+import json
 
 from numpy import *
 from itertools import product
 import pandas as pd
-from google.cloud import logging
+# import google.cloud
+# from google.cloud import logging
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -317,12 +318,23 @@ class combineStats(beam.CombineFn):
                'Nframes': f}
         return out
 
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, ndarray):
+            return obj.tolist()
+        if isinstance(obj, pd.DataFrame):
+            return obj.to_dict()
+        return json.JSONEncoder.default(self, obj)
+
 class toJSON(beam.DoFn):
 
     def __init__(self):
         pass
     def process(self, element):
-        yield pd.json.dumps({element[0]: element[1]})
+        # yield json.dumps(
+        #     {element[0]: element[1]},
+        #     cls=NumpyEncoder)
+        yield pd.io.json.dumps({element[0]: element[1]})
 
 def splitBadFiles(KVelement, N):
     key, element = KVelement

@@ -4,9 +4,8 @@ from __future__ import absolute_import
 import os
 import sys
 import time
-from itertools import product
-
-from google.cloud import error_reporting, logging
+# import google.cloud
+# from google.cloud import error_reporting, logging
 from numpy import *
 from numpy.random import rand
 from BVchunker import VideoSplitter, combineTZ, splitBadFiles
@@ -150,6 +149,7 @@ class _ND2Source(filebasedsource.FileBasedSource):
         super(_ND2Source, self).__init__(
             file_pattern,
             min_bundle_size=0,
+            splittable=True,
             validate=False)
         self.chunkShape = chunkShape
         self.Overlap = Overlap
@@ -241,7 +241,7 @@ class _ND2Source(filebasedsource.FileBasedSource):
                         .clip(None, 1000)
                     frame = uint16(frame)
                     # frame = 1000*ones(frame1.shape, 'uint16')
-                    # frame[frame > 1000] = 1000
+                    #frame[frame > 1000] = 1000
                     assert all(isfinite(frame))
                     if n < offsets.size:
                         nextBlockStart = offsets[n]
@@ -252,16 +252,16 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     for chunk in splitter.iterChunks(n, frame):
                         yield chunk
             except:
-                client = error_reporting.Client()
-                client.report('File Not Processed: ' + fileName)
-                client.report_exception()
-
-                logging_client = logging.Client()
-                log_name = 'ND2-reader'
-                logger = logging_client.logger(log_name)
-                logmessage = {
-                  'Error': 'File cannot be read',
-                  'Filename': fileName
-                }
-                logger.log_struct(logmessage)
+                # client = error_reporting.Client()
+                # client.report('File Not Processed: ' + fileName)
+                # client.report_exception()
+                #
+                # logging_client = logging.Client()
+                # log_name = 'ND2-reader'
+                # logger = logging_client.logger(log_name)
+                # logmessage = {
+                #   'Error': 'File cannot be read',
+                #   'Filename': fileName
+                # }
+                # logger.log_struct(logmessage)
                 yield ('File Not Processed', fileName)

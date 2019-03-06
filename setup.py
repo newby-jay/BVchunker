@@ -74,7 +74,6 @@ class CustomCommands(setuptools.Command):
     pass
 
   def RunCustomCommand(self, command_list):
-    print 'Running command: %s' % command_list
     p = subprocess.Popen(
         command_list,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -107,7 +106,8 @@ REQUIRED_PACKAGES = [
     'pims_nd2',
     'google-cloud',
     'google-cloud-error-reporting',
-    'google-cloud-logging==1.6.0']
+    'google-cloud-logging==1.6.0'
+    ]
 
 
 setuptools.setup(
