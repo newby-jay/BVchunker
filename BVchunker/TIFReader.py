@@ -4,8 +4,6 @@ from __future__ import absolute_import
 import os
 import sys
 import time
-from cStringIO import StringIO
-import xml.etree.ElementTree as ET
 
 from numpy import *
 

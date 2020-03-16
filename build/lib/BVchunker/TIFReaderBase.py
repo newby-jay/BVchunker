@@ -1,10 +1,6 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
 import os
 import sys
 import time
-from cStringIO import StringIO
 import re
 
 from numpy import *
@@ -266,7 +262,7 @@ class _TIFutils:
         output['mdOffset'] = (tifMD[270][2], tifMD[270][1])
         output['pixelSizeBytes'] = int(tifMD[258][2]/8)
         output['stripOffsets'] = tifMD[273][1:]
-        if 259 in tifMD.keys():
+        if 259 in tifMD:
             assert tifMD[259][2] == 1, 'Compression is not supported'
         return output
     def getNextOffset(self, vfile):

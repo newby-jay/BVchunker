@@ -1,6 +1,3 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
 import os
 import sys
 import time
@@ -128,7 +125,7 @@ class _ND2utils:
             'NxBytes': b'\x00W\x00i\x00d\x00t\x00h\x00B\x00y\x00t\x00e\x00s\x00\x00\x00',
             'Ny': b'\x00H\x00e\x00i\x00g\x00h\x00t\x00\x00\x00',}
         imgMD = {}
-        for key, val in mdkeysXY.iteritems():
+        for key, val in mdkeysXY.items():
             ind = mdAtributesBytes.index(val)
             start = ind + len(val)
             a = mdAtributesBytes[start: start + 2]
@@ -136,7 +133,7 @@ class _ND2utils:
         mdkeysZ = {
             'dxy': b'\rd\x00C\x00a\x00l\x00i\x00b\x00r\x00a\x00t\x00i\x00o\x00n\x00\x00\x00',
                   }
-        for key, val in mdkeysZ.iteritems():
+        for key, val in mdkeysZ.items():
             ind = mdCalibrationBytes.index(val)
             start = ind + len(val)
             if key == 'dxy':

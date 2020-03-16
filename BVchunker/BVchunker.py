@@ -1,11 +1,7 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
 import os
 import sys
 import time
 import tempfile
-from cStringIO import StringIO
 import json
 
 from numpy import *
@@ -35,7 +31,7 @@ class VideoSplitter:
         self.downSample = int(downSample)
         assert downSample > 0
         self.imgMetadata = imgMetadata.copy()
-        assert all([key in self.imgMetadata.keys() for key in
+        assert all([key in self.imgMetadata for key in
             ['Nt', 'Ny', 'Nx', 'Nz', 'fileName', 'fileSize', 'dxy', 'dz']])
         assert self.imgMetadata['dxy'] > 0
         assert self.imgMetadata['dz'] > 0
@@ -305,7 +301,7 @@ class combinePointset(beam.CombineFn):
         PS, md = self.create_accumulator()
         for APS, Amd in accumulators:
             PS = concatenate([PS, APS], 0)
-            if len(md.keys()) == 0:
+            if len(md) == 0:
                 md = Amd
         return PS, md
     def extract_output(self, A):
