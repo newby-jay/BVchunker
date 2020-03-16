@@ -180,8 +180,8 @@ class combineTZ(beam.CombineFn):
             Avid = frame
         else:
             n  = element['t']*Nz + element['z']
-            if n in array(At)*Nz + array(Az):
-                return At, Az, Ametadata, Astats, Avid
+            # if n in array(At)*Nz + array(Az):
+            #     return At, Az, Ametadata, Astats, Avid
             #At = concatenate([At, [element['t']]], 0)
             #Az = concatenate([Az, [element['z']]], 0)
             At.append(element['t'])
@@ -218,7 +218,7 @@ class combineTZ(beam.CombineFn):
             if not n in N:
                 N.append(n)
                 inds.append(count)
-                count += 1
+            count += 1
         return inds
     def _remove_duplicates(self, A):
         t, z, metadata, stats, vid = A
@@ -227,8 +227,13 @@ class combineTZ(beam.CombineFn):
         t = array(t)
         z = array(z)
         inds = self._find_duplicates(t, z, Nz)
+        n = t[inds]*Nz + z[inds]
+        assert len(set(n)) == n.size
         return t[inds], z[inds], metadata, stats[inds], vid[inds]
     def extract_output(self, A):
+        # t, z, metadata, stats, vid = A
+        # t = array(t)
+        # z = array(z)
         t, z, metadata, stats, vid = self._remove_duplicates(A)
         shape = array(metadata['chunkShape']) + 2*array(metadata['Overlap'])
         Nt, Ny, Nx, Nz = shape

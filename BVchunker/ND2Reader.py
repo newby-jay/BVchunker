@@ -42,7 +42,22 @@ class ReadFromND2Vid(PTransform):
 
 class _ND2utils:
     @staticmethod
-    def findFooterOffset(vfile):
+    def _getFileSize(vfile):
+        try:
+            size = vfile.size
+        except:
+            vfile.seek(0, 2)
+            size = vfile.tell()
+        vfile.seek(0)
+        return size
+    @staticmethod
+    def _checkFileTypeMagicNumber(vfile):
+        vfile.seek(0)
+        #size = _ND2utils.getFileSize(vfile)
+        mn = vfile.read(3)
+        assert mn == '\xda\xce\xbe'
+    @staticmethod
+    def _findFooterOffset(vfile):
         pos = vfile.tell()
         filemapOffset = -1
         for line in vfile:
@@ -53,15 +68,7 @@ class _ND2utils:
             pos += int(len(line))
         return filemapOffset
     @staticmethod
-    def readMetadata(vfile):
-        try:
-            size = vfile.size
-        except:
-            vfile.seek(0, 2)
-            size = vfile.tell()
-        vfile.seek(0)
-        mn = vfile.read(3)
-        assert mn == '\xda\xce\xbe'
+    def _getFooter(vfile, size):
         filemapOffset = 0
         start = max(0, size - 100*1024)
         vfile.seek(start)
@@ -76,11 +83,17 @@ class _ND2utils:
         vfile.seek(filemapOffset)
         assert size - filemapOffset < 1e8
         footer = vfile.read(size - filemapOffset)
+        return footer
+    @staticmethod
+    def _getMetadata_Attributes(vfile, footer):
         ind = footer.index('ImageAttributesLV!') + len('ImageAttributesLV!')
         mdos = frombuffer(footer[ind:ind+16], 'int64')
         vfile.seek(int(mdos[0]) + 16)
         assert filemapOffset - mdos[0] - 16 < 1e8
         mdAtributesBytes = vfile.read(filemapOffset - mdos[0] - 16)
+        return mdAtributesBytes
+    @staticmethod
+    def _getMetadata_Calibration(vfile, footer):
         ind = footer.index('ImageCalibrationLV|0!') \
             + len('ImageCalibrationLV|0!')
         mdos = frombuffer(footer[ind:ind+16], 'int64')
@@ -89,7 +102,10 @@ class _ND2utils:
         ind = footer.index('ImageTextInfoLV!') + len('ImageTextInfoLV!')
         mdos = frombuffer(footer[ind:ind+16], 'int64')
         vfile.seek(int(mdos[0]) + 16)
-        metadataBytes = vfile.read(10*1024)
+        mdCalibrationBytes = vfile.read(10*1024)
+        return mdCalibrationBytes
+    @staticmethod
+    def _getOffsets(footer):
         offsetData = []
         n = 0
         while True:
@@ -102,7 +118,11 @@ class _ND2utils:
             vi = footer[i:i+16]
             offsetData.append((key, int(mdos[0]), int(mdos[1])))
             n += 1
-        Nrecords = n
+        return offsetData
+    @staticmethod
+    def _decodeMetadata(mdAtributesBytes, mdCalibrationBytes, size):
+        ### TODO: probably XML or JSON decoder should work here?
+        """Decode a very minimal set of metadata."""
         mdkeysXY = {
             'Nx': b'\x00W\x00i\x00d\x00t\x00h\x00\x00\x00',
             'NxBytes': b'\x00W\x00i\x00d\x00t\x00h\x00B\x00y\x00t\x00e\x00s\x00\x00\x00',
@@ -124,9 +144,9 @@ class _ND2utils:
                 imgMD[key] = frombuffer(a, 'float64')[0]
         mdkeysText = {
             'Nt': b'\x00T\x00i\x00m\x00e\x00 \x00L\x00o\x00o\x00p\x00:\x00 '}
-        ind = metadataBytes.index(
+        ind = mdCalibrationBytes.index(
             b'\x00M\x00e\x00t\x00a\x00d\x00a\x00t\x00a\x00:')
-        metadataText = metadataBytes[ind:][1::2]
+        metadataText = mdCalibrationBytes[ind:][1::2]
         ind = metadataText.index(b'\x00\x08')
         metadataText = metadataText[:ind]
         lines = metadataText.split('\r\n')
@@ -136,15 +156,45 @@ class _ND2utils:
                 sline = lines[n+1].split(' ')
                 imgMD['dz'] = float64(sline[2])
                 imgMD['dz units'] = sline[3]
-        ind = metadataBytes.index(mdkeysText['Nt'])
+        ind = mdCalibrationBytes.index(mdkeysText['Nt'])
         di = len(mdkeysText['Nt'])
-        val = metadataBytes[ind + di: ind + di + 8][1::2].split('\r')[0]
+        val = mdCalibrationBytes[ind + di: ind + di + 8][1::2].split('\r')[0]
         imgMD['Nt'] = int(val)
         imgMD['Nz'] = int(Nrecords/imgMD['Nt'])
-        # imgMD['raw'] = metadataText
+        imgMD['raw'] = metadataText
         imgMD['fileSize'] = size
+    return imgMD
+    @staticmethod
+    def readMetadata(vfile):
+        size = _ND2utils._getFileSize(vfile)
+        _ND2utils._checkFileTypeMagicNumber(vfile)
+        footer = _ND2utils._getFooter(vfile, size)
+        mdAtributesBytes = _ND2utils._getMetadata_Attributes(vfile, footer)
+        mdCalibrationBytes = _ND2utils._getMetadata_Calibration(vfile, footer)
+        offsetData = _ND2utils._getOffsets(footer)
+        Nrecords = len(offsetData)
+        imgMD = _ND2utils._decodeMetadata(
+            mdAtributesBytes,
+            mdCalibrationBytes,
+            size)
         return offsetData, imgMD
-
+    @staticmethod
+    def getFrame(vfile, recordSize, n, shape):
+        Ny, Nx = shape
+        record = vfile.read(recordSize)
+        key = 'ImageDataSeq|{0}!'.format(int(n-1))
+        i = record.index(key)
+        # '\xda\xce\xbe\n\xe8\x0f\x00\x00'
+        assert record[:4] == '\xda\xce\xbe\n'
+        frameShift = frombuffer(record[4:12], 'int32')
+        db0 = record[i + frameShift[0]:]
+        # assert len(db0) == frameShift[1]
+        timeStampBytes = db0[:8]
+        db = db0[8: frameSizeBytes + 8]
+        frame = frombuffer(db, 'uint16') \
+            .reshape(Ny, Nx)
+            #.copy().clip(None, 1000)
+        return uint16(frame), timeStampBytes
 class _ND2Source(filebasedsource.FileBasedSource):
     """An experiment.
     """
@@ -227,23 +277,11 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     if n > offsets.size:
                         break
                     assert recordSize[n-1] < 2e8
-                    record = vfile.read(recordSize[n-1])
-                    key = 'ImageDataSeq|{0}!'.format(int(n-1))
-                    i = record.index(key)
-                    # '\xda\xce\xbe\n\xe8\x0f\x00\x00'
-                    assert record[:4] == '\xda\xce\xbe\n'
-                    frameShift = frombuffer(record[4:12], 'int32')
-                    db0 = record[i + frameShift[0]:]
-                    # assert len(db0) == frameShift[1]
-                    timeStampMaybe = db0[:8]
-                    db = db0[8: frameSizeBytes + 8]
-                    frame = frombuffer(db, 'uint16') \
-                        .reshape(Ny, Nx) \
-                        .copy() \
-                        .clip(None, 1000)
-                    frame = uint16(frame)
-                    # frame = 1000*ones(frame1.shape, 'uint16')
-                    #frame[frame > 1000] = 1000
+                    frame, timeStampBytes = _ND2utils.getFrame(
+                        vfile,
+                        recordSize[n-1],
+                        n,
+                        (Ny, Nx))
                     assert all(isfinite(frame))
                     if n < offsets.size:
                         nextBlockStart = offsets[n]
@@ -252,6 +290,7 @@ class _ND2Source(filebasedsource.FileBasedSource):
                     else:
                         vfile.seek(fileSize)
                     for chunk in splitter.iterChunks(n, frame):
+                        chunk['metadata']['timeStampBytes'] = timeStampBytes
                         yield chunk
             except:
                 # client = error_reporting.Client()

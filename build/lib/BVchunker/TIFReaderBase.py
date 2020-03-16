@@ -119,19 +119,24 @@ class CombineOffsets(beam.CombineFn):
                 else:
                     Aout[key] = A[key]
         return Aout
+    def _remove_duplicates(self, a):
+        s = set([(x, y) for x, y in a])
+        return array([(x, y) for x, y in s])
     def extract_output(self, A):
         out = {}
         for key in A:
+            #oData = self._remove_duplicates(int64(A[key]))
             oData = int64(A[key])
             if oData.size == 0:
                 out[key] = int64([])
             inds = oData[:, 0].argsort()
             IFDs = oData[:, 0][inds]
             nextIFDs = oData[:, 1][inds]
-            if all(diff(IFDs) > 0) and all(IFDs[1:] == nextIFDs[:-1]):
-                out[key] = IFDs
-            else:
-                out[key] = int64([])
+            assert all(diff(IFDs) > 0)
+            assert all(IFDs[1:] == nextIFDs[:-1])
+            out[key] = IFDs
+            #else:
+            #    out[key] = int64([])
         return out
 
 class ReadFromTIFBase(PTransform):
@@ -424,7 +429,8 @@ class _TIFSource(filebasedsource.FileBasedSource):
             try:
                 fileSize = self._getSize(vfile)
                 TU = _TIFutils(fileSize)
-                firstIFD, nextIFD, imgOffset, imgMetadata = TU.readHeader(vfile) # leave vfile at 0
+                # leave vfile at 0
+                firstIFD, nextIFD, imgOffset, imgMetadata = TU.readHeader(vfile)
                 imgMetadata = self.decode_metadata(imgMetadata)
                 IFD = firstIFD
                 markerSize = TU.markerSize
@@ -448,7 +454,8 @@ class _TIFSource(filebasedsource.FileBasedSource):
                     TU.findNextIFD(vfile) # leave vfile at begining of IFD
                     sIFD = vfile.tell()
                     if vfile.tell() <= fileSize - markerSize:
-                        IFD, nextIFD, imgOffset, imgMD = TU.getNextOffset(vfile) # leave vfile at end of IFD
+                        # leave vfile at end of IFD
+                        IFD, nextIFD, imgOffset, imgMD = TU.getNextOffset(vfile)
                         assert sIFD == IFD
                         assert vfile.tell() == IFD + markerSize
                     else:
@@ -477,7 +484,8 @@ class _TIFSource(filebasedsource.FileBasedSource):
                     yield ('frame', (fileName, frameData))
                     if 0 < nextIFD <= fileSize - markerSize:
                         vfile.seek(nextIFD)
-                        IFD, nextIFD, imgOffset, imgMD = TU.getNextOffset(vfile) # leave vfile at end of IFD
+                        # leave vfile at end of IFD
+                        IFD, nextIFD, imgOffset, imgMD = TU.getNextOffset(vfile)
                         next_block_start = nextIFD + markerSize
                         assert imgMD['Nx'] == Nx
                         assert imgMD['Ny'] == Ny
