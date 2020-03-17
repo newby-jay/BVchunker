@@ -4,7 +4,7 @@ import time
 import re
 
 from numpy import *
-from BVchunker import VideoSplitter, combineTZ
+from .BVchunker import VideoSplitter, combineTZ
 from google.cloud import error_reporting, logging
 
 import apache_beam as beam

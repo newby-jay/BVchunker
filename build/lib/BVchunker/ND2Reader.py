@@ -5,7 +5,7 @@ import time
 # from google.cloud import error_reporting, logging
 from numpy import *
 from numpy.random import rand
-from BVchunker import VideoSplitter, combineTZ, splitBadFiles
+from .BVchunker import VideoSplitter, combineTZ, splitBadFiles
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -160,7 +160,7 @@ class _ND2utils:
         imgMD['Nz'] = int(Nrecords/imgMD['Nt'])
         imgMD['raw'] = metadataText
         imgMD['fileSize'] = size
-    return imgMD
+        return imgMD
     @staticmethod
     def readMetadata(vfile):
         size = _ND2utils._getFileSize(vfile)

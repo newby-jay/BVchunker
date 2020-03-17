@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 from numpy import *
 
-import BVchunker.TIFReaderBase as tifbase
+from . import TIFReaderBase as tifbase
 
 class ReadFromOMETIFVid(tifbase.ReadFromTIFBase):
     """A PTransform for reading 2D or 3D OME TIF video files."""

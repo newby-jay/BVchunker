@@ -275,7 +275,7 @@ class remapPoints(beam.DoFn):
                      &(newPS.y >  0)&(newPS.y <  Ny - 1)
                      &(newPS.x >  0)&(newPS.x <  Nx - 1)
                      &(newPS.z >= 0)&(newPS.z <= Nz - 1)]
-        mdout = dict((k, v) for k, v in md.iteritems()
+        mdout = dict((k, v) for k, v in md.items()
                     if k not in ['validLocal', 'validGlobal', 'chunkIndex'])
         output = {'pointSet': outPS,
                   'metadata': mdout}

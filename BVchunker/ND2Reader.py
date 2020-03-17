@@ -5,7 +5,7 @@ import time
 # from google.cloud import error_reporting, logging
 from numpy import *
 from numpy.random import rand
-from BVchunker import VideoSplitter, combineTZ, splitBadFiles
+from .BVchunker import VideoSplitter, combineTZ, splitBadFiles
 
 import apache_beam as beam
 from apache_beam.transforms import PTransform
@@ -52,7 +52,7 @@ class _ND2utils:
         vfile.seek(0)
         #size = _ND2utils.getFileSize(vfile)
         mn = vfile.read(3)
-        assert mn == '\xda\xce\xbe'
+        assert mn == b'\xda\xce\xbe'
     @staticmethod
     def _findFooterOffset(vfile):
         pos = vfile.tell()
@@ -160,7 +160,7 @@ class _ND2utils:
         imgMD['Nz'] = int(Nrecords/imgMD['Nt'])
         imgMD['raw'] = metadataText
         imgMD['fileSize'] = size
-    return imgMD
+        return imgMD
     @staticmethod
     def readMetadata(vfile):
         size = _ND2utils._getFileSize(vfile)
@@ -182,7 +182,7 @@ class _ND2utils:
         key = 'ImageDataSeq|{0}!'.format(int(n-1))
         i = record.index(key)
         # '\xda\xce\xbe\n\xe8\x0f\x00\x00'
-        assert record[:4] == '\xda\xce\xbe\n'
+        assert record[:4] == b'\xda\xce\xbe\n'
         frameShift = frombuffer(record[4:12], 'int32')
         db0 = record[i + frameShift[0]:]
         # assert len(db0) == frameShift[1]

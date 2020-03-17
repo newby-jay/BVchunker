@@ -5,7 +5,7 @@ import tempfile
 
 from numpy import *
 from itertools import product
-from BVchunker import VideoSplitter, combineTZ, splitBadFiles
+from .BVchunker import VideoSplitter, combineTZ, splitBadFiles
 import pims
 from pims import bioformats
 from pims.bioformats import BioformatsReader as BioformatsReader
