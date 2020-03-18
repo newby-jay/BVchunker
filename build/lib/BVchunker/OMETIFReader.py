@@ -21,7 +21,7 @@ class ReadFromOMETIFVid(tifbase.ReadFromTIFBase):
     @staticmethod
     def read_metadata(imgMD):
         metaDataRaw = imgMD['raw']
-        assert '<?xml' in metaDataRaw and '</OME>' in metaDataRaw
+        assert b'<?xml' in metaDataRaw and b'</OME>' in metaDataRaw
         root = ET.fromstring(metaDataRaw)
         urlPrefixThing = root.tag[:-3]
         for p in root.iter(urlPrefixThing + 'Pixels'):

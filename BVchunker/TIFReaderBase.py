@@ -11,6 +11,7 @@ import apache_beam as beam
 from apache_beam.transforms import PTransform
 from apache_beam.io import filebasedsource, iobase
 from apache_beam.io.iobase import Read
+from apache_beam.io.filesystems import FileSystems
 
 class TagFrames(beam.DoFn):
     """Attach output tags for frames, offset data, and read errors."""
@@ -290,13 +291,14 @@ class _TIFutils:
             vfile.seek(A0 + self.markerSize)
         return A0, A, frameOffset, frameMD
     def _formatBytes(self, bytes):
-        return '({0})'.format(re.escape(bytes))
+        return '({0})'.format(re.escape(bytes.decode()))
     def _makeIFDre(self, IFDbytes, Ntags):
         assert self.markerSize > 0
         fixedTags = [256, 257, 258, 259]
         Wcard = r'(.{'+str(self.rs)+'})'
         RElist = []
-        RElist.append('({0})'.format(re.escape(IFDbytes[:self.tagHead])))
+        RElist.append(
+            '({0})'.format(re.escape(IFDbytes[:self.tagHead].decode())))
         for n in arange(Ntags):
             start = self.tagHead + n*self.tagSize
             tagBytes = IFDbytes[start:start + 2]
@@ -325,7 +327,7 @@ class _TIFutils:
             return
         offset = startOffset
         buf = vfile.read(bufferSize)
-        match = re.search(self.IFD_RE, buf, flags=re.DOTALL)
+        match = re.search(self.IFD_RE, buf.decode('latin-1'), flags=re.DOTALL)
         overlapCorrection = 0
         while match is None:
             buf = buf[-self.markerSize - 1:] + vfile.read(bufferSize)
@@ -335,7 +337,7 @@ class _TIFutils:
                 return
         groups = match.groups()
         IFD = offset + match.start() - overlapCorrection
-        nextIFD = self.get_intC(groups[-1])
+        nextIFD = self.get_intC(groups[-1].encode())
         # if nextIFD <= IFD: # False positive for IFD
         #     vfile.seek(IFD + self.markerSize)
         #     self.findNextIFD(vfile)
@@ -352,13 +354,13 @@ class _TIFutils:
         vfile.seek(IFD)
         return
     def _initHeader(self, buf):
-        if buf[:2] == 'II' and buf[2:4] == '*\x00':
+        if buf[:2] == b'II' and buf[2:4] == b'*\x00':
             self._set_byte_order('<', 4)
-        elif buf[:2] == 'MM' and buf[2:4] == '\x00*':
+        elif buf[:2] == b'MM' and buf[2:4] == b'\x00*':
             self._set_byte_order('>', 4)
-        elif buf[:2] == 'II' and buf[2:4] == '+\x00':
+        elif buf[:2] == b'II' and buf[2:4] == b'+\x00':
             self._set_byte_order('<', 8)
-        elif buf[:2] == 'MM' and buf[2:4] == '\x00+':
+        elif buf[:2] == b'MM' and buf[2:4] == b'\x00+':
             self._set_byte_order('>', 8)
         else:
             raise
@@ -408,6 +410,21 @@ class _TIFSource(filebasedsource.FileBasedSource):
         except:
             vfile.seek(0, 2)
             return vfile.tell()
+    # @check_accessible(['_pattern'])
+    def estimate_size(self):
+        try:
+            pattern = self._pattern.get()
+        except:
+            return None
+        match_result = FileSystems.match([pattern])[0]
+        # size = 0
+        # for f in match_result.metadata_list:
+        #     if f.path[-4:] in ['.mp4', '.MP4']:
+        #         size += 100*f.size_in_bytes
+        #     else:
+        #         size += f.size_in_bytes
+        # return int(size)
+        return sum([f.size_in_bytes for f in match_result.metadata_list])
     def read_records(self, fileName, range_tracker):
         next_block_start = -1
         def split_points_unclaimed(stopPosition):
@@ -439,7 +456,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
                 imgMetadata['fileSize'] = fileSize
                 imgMetadata['fileName'] = fileName
                 shape = tuple(int(imgMetadata[k]) for k in ['Ny', 'Nx', 'Nz'])
-                assert all(shape > 0)
+                assert all(array(shape) > 0)
                 Ny, Nx, Nz = shape
                 assert Nx < 2048*10 and Ny < 2048*10
                 Nc = imgMetadata['Nc']
@@ -460,6 +477,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
                 while range_tracker.try_claim(vfile.tell()):
                     if vfile.tell() >= fileSize:
                         break
+                    print(imgOffset)
                     assert imgOffset < fileSize - frameSizeBytes
                     vfile.seek(imgOffset)
                     record = vfile.read(frameSizeBytes)
@@ -489,7 +507,8 @@ class _TIFSource(filebasedsource.FileBasedSource):
                     else:
                         vfile.seek(fileSize)
                         break
-            except:
+            except Exception as inst:
+                raise inst
                 client = error_reporting.Client()
                 client.report('File Not Processed: ' + fileName)
                 client.report_exception()

@@ -104,16 +104,20 @@ class _PIMSSource(filebasedsource.FileBasedSource):
             vfile.seek(0)
             return fs
     # @check_accessible(['_pattern'])
-    # def estimate_size(self):
-    #     pattern = self._pattern.get()
-    #     match_result = FileSystems.match([pattern])[0]
-    #     size = 0
-    #     for f in match_result.metadata_list:
-    #         if f.path[-4:] in ['.mp4', '.MP4']:
-    #             size += 100*f.size_in_bytes
-    #         else:
-    #             size += f.size_in_bytes
-    #     return int(size)
+    def estimate_size(self):
+        try:
+            pattern = self._pattern.get()
+        except:
+            return None
+        match_result = FileSystems.match([pattern])[0]
+        # size = 0
+        # for f in match_result.metadata_list:
+        #     if f.path[-4:] in ['.mp4', '.MP4']:
+        #         size += 100*f.size_in_bytes
+        #     else:
+        #         size += f.size_in_bytes
+        # return int(size)
+        return sum([f.size_in_bytes for f in match_result.metadata_list])
     def _getMetadata(self, frames, fileName, fileSize):
         fshape = frames.frame_shape
         assert len(fshape) == 2 or len(fshape) == 3
