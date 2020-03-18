@@ -199,7 +199,7 @@ class _TIFutils:
             18: dtype('uint64')}
         self.fileSize = fileSize
         self.markerSize = 0
-        self.IFD_RE = ''
+        self.IFD_RE = b''
         self.BO = None
         self.intTypeB = None
         self.intTypeC = None
@@ -291,14 +291,17 @@ class _TIFutils:
             vfile.seek(A0 + self.markerSize)
         return A0, A, frameOffset, frameMD
     def _formatBytes(self, bytes):
-        return '({0})'.format(re.escape(bytes.decode()))
+        # return '({0})'.format(re.escape(bytes.decode()))
+        return b'(' + re.escape(bytes) + b')'
     def _makeIFDre(self, IFDbytes, Ntags):
         assert self.markerSize > 0
         fixedTags = [256, 257, 258, 259]
-        Wcard = r'(.{'+str(self.rs)+'})'
+        # Wcard = '(.{'+str(self.rs)+'})'
+        Wcard = b'(.{' + str(self.rs).encode() + b'})'
         RElist = []
-        RElist.append(
-            '({0})'.format(re.escape(IFDbytes[:self.tagHead].decode())))
+        # RElist.append(
+        #     '({0})'.format(re.escape(IFDbytes[:self.tagHead].decode())))
+        RElist.append([self._formatBytes(IFDbytes[:self.tagHead])])
         for n in arange(Ntags):
             start = self.tagHead + n*self.tagSize
             tagBytes = IFDbytes[start:start + 2]
@@ -316,8 +319,8 @@ class _TIFutils:
                 TAGlist.append(Wcard)
                 TAGlist.append(Wcard)
             RElist.append(TAGlist)
-        RElist.append(Wcard)
-        self.IFD_RE = ''.join([''.join(el) for el in RElist])
+        RElist.append([Wcard])
+        self.IFD_RE = b''.join([b''.join(el) for el in RElist])
     def findNextIFD(self, vfile):
         bufferSize = 16 * 1024 * 1024
         assert bufferSize > self.markerSize
@@ -327,7 +330,11 @@ class _TIFutils:
             return
         offset = startOffset
         buf = vfile.read(bufferSize)
-        match = re.search(self.IFD_RE, buf.decode('latin-1'), flags=re.DOTALL)
+        match = re.search(
+            self.IFD_RE,
+            buf,
+            flags=re.DOTALL
+            )
         overlapCorrection = 0
         while match is None:
             buf = buf[-self.markerSize - 1:] + vfile.read(bufferSize)
@@ -337,7 +344,7 @@ class _TIFutils:
                 return
         groups = match.groups()
         IFD = offset + match.start() - overlapCorrection
-        nextIFD = self.get_intC(groups[-1].encode())
+        nextIFD = self.get_intC(groups[-1])
         # if nextIFD <= IFD: # False positive for IFD
         #     vfile.seek(IFD + self.markerSize)
         #     self.findNextIFD(vfile)
@@ -477,8 +484,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
                 while range_tracker.try_claim(vfile.tell()):
                     if vfile.tell() >= fileSize:
                         break
-                    print(imgOffset)
-                    assert imgOffset < fileSize - frameSizeBytes
+                    assert imgOffset <= fileSize - frameSizeBytes
                     vfile.seek(imgOffset)
                     record = vfile.read(frameSizeBytes)
                     if Nc > 1:
@@ -508,7 +514,7 @@ class _TIFSource(filebasedsource.FileBasedSource):
                         vfile.seek(fileSize)
                         break
             except Exception as inst:
-                raise inst
+                #raise inst
                 client = error_reporting.Client()
                 client.report('File Not Processed: ' + fileName)
                 client.report_exception()
